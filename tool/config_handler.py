@@ -25,11 +25,18 @@ def ChromaLoadConfig(abs_path:str|None=None,encoding='utf-8'):
         abs_path=get_abs_path("config/ChromaConfig.yml")
     with open(abs_path,'r',encoding=encoding) as f:
         return yaml.load(f,Loader=yaml.FullLoader)
+
+def SystemLoadConfig(abs_path:str|None=None,encoding='utf-8'):
+    if not abs_path:
+        abs_path=get_abs_path("config/SystemConfig.yml")
+    with open(abs_path,'r',encoding=encoding) as f:
+        return yaml.load(f,Loader=yaml.FullLoader)
     
 Rag_Config=RagLoadConfig()
 Prompt_Config=PromptLoadConfig()
 Chroma_Config=ChromaLoadConfig()
 Agent_Config=AgentLoadConfig()
+System_Config=SystemLoadConfig()
 
 if __name__=='__main__':
     #module_test
