@@ -17,7 +17,7 @@ import os
 #def spliter_model prompt
 sys_prompt=SystemMessagePromptTemplate.from_template_file(Prompt_Config["spliter_prompt_path"],input_variables=[])
 
-class file_uploader():
+class File_Uploader():
     """
     将指定目录文件上传至chroma库便于后期检索
     """
