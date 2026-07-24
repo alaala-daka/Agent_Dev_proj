@@ -35,8 +35,8 @@ def listdir_readable_file(abs_path:str,type:tuple[str]):
     for f in os.listdir(abs_path):
         if f.endswith(type):
             files.append(os.path.join(abs_path,f))
-    
-    if not f:
+
+    if not files:
         logger.warning('无可读文件')
 
     return files
