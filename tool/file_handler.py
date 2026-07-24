@@ -46,5 +46,5 @@ def textloader(abs_path:str)->list[Document]|None:
         return TextLoader(abs_path,encoding='utf-8').load()
 
 def pdfloader(abs_path:str)->list[Document]|None:
-    if abs_path.endswith('txt'):
+    if abs_path.endswith('pdf'):
         return PyPDFLoader(abs_path).load()

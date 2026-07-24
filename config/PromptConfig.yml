@@ -1,0 +1,4 @@
+system_prompt_path: C:\Users\aefar\source\repos\Agent_Dev_proj\prompt\system_prompt.txt
+rag_prompt_path: C:\Users\aefar\source\repos\Agent_Dev_proj\prompt\rag_prompt.txt
+report_prompt_path: C:\Users\aefar\source\repos\Agent_Dev_proj\prompt\report_prompt.txt
+spliter_prompt_path: C:\Users\aefar\source\repos\Agent_Dev_proj\prompt\spliter_prompt.txt
