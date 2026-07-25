@@ -3,8 +3,9 @@ Agent工具实现
 """
 from langchain_core.tools import tool
 from tavily import TavilyClient
-from tool.config_handler import System_Config
-
+from tool.config_handler import System_Config, Chroma_Config
+from tool.logger_handler import logger
+from vector_uploader_service.rag_summarize import Rag_Summarize
 """
 Travily网络搜索工具
 """
@@ -260,3 +261,512 @@ def todo(command: str) -> str:
         return f"🗑 已清空全部 {count} 条任务。"
 
     return f"错误: 未知操作 '{action}'。支持: add / list / doing / done / delete / clear done / reset"
+
+"""
+反思总结笔记本工具 — Agent 任务结束时的经验沉淀、检索与管理
+================================================================
+存储：专有 Chroma collection，支持语义搜索
+触发：Middleware 在任务完成时注入反思提示，Agent 主动调用本工具记录
+"""
+from datetime import datetime, timedelta
+from typing import Any
+from langchain_chroma import Chroma
+from langchain_community.embeddings import DashScopeEmbeddings
+
+# ── 初始化专有 Chroma collection ──
+_reflection_chroma = Chroma(
+    collection_name=Chroma_Config.get("reflection_collection_name", "agent_reflections"),
+    persist_directory=Chroma_Config["persist_directory"],
+    embedding_function=DashScopeEmbeddings(
+        model=Chroma_Config["embedding_model_name"],
+    ),
+)
+
+# ── 严重程度映射 ──
+_SEVERITY_ICON: dict[str, str] = {
+    "fatal":   "💀",
+    "high":    "🔴",
+    "medium":  "🟡",
+    "low":     "🟢",
+}
+_SEVERITY_LABEL: dict[str, str] = {
+    "fatal":   "致命",
+    "high":    "严重",
+    "medium":  "一般",
+    "low":     "轻微",
+}
+
+_VALID_SEVERITIES = frozenset(_SEVERITY_ICON.keys())
+
+# ID 计数器（基于现有 note 数量初始化）
+_existing = _reflection_chroma.get()
+_reflection_id_counter = len(_existing["ids"]) if _existing and _existing["ids"] else 0
+
+
+def _next_ref_id() -> str:
+    global _reflection_id_counter
+    _reflection_id_counter += 1
+    return f"ref_{_reflection_id_counter}"
+
+
+def _build_page_content(error_desc: str, solution: str, philosophy: str) -> str:
+    """组装入库文本，便于语义搜索时匹配完整信息"""
+    parts = [
+        f"错误描述：{error_desc}",
+        f"解决方案：{solution}",
+        f"哲学理解：{philosophy}",
+    ]
+    return "\n".join(parts)
+
+
+def _now_iso() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _fmt_notes(entries: list[dict[str, Any]], with_similarity: bool = False) -> str:
+    """批量格式化反思笔记"""
+    if not entries:
+        return "（空）暂无反思笔记。\n\n💡 试试: reflection add 错误 | 解决方案 | 哲学理解"
+
+    lines = [f"📖 反思笔记本 [共 {len(entries)} 条]", "═" * 48]
+    for i, entry in enumerate(entries, 1):
+        meta = entry.get("metadata", {})
+        content = entry.get("page_content", entry.get("content", ""))
+        sev = meta.get("severity", "medium")
+        icon = _SEVERITY_ICON.get(sev, "❓")
+        label = _SEVERITY_LABEL.get(sev, sev)
+        tags = meta.get("tags", "general")
+        ts = meta.get("timestamp", "未知")
+        rid = meta.get("ref_id", "?")
+
+        content_display = content.replace("\n", "\n   │ ")
+        lines.append(f"  {icon} [{rid}] {label} | 🏷 {tags} | 📅 {ts}")
+        lines.append(f"   │ {content_display}")
+        if with_similarity and "similarity" in entry:
+            lines.append(f"   📊 相关度: {entry['similarity']:.3f}")
+        if i < len(entries):
+            lines.append("   ·")
+    return "\n".join(lines)
+
+
+@tool(description="""反思总结笔记本工具，用于在每次任务结束后沉淀经验教训并支持回顾检索。
+
+存储于专有向量库，支持语义搜索，让 Agent 能在未来遇到相似场景时检索历史教训。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+操作命令（输入以下格式的字符串）：
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  add <错误描述> | <解决方案> | <哲学理解>
+       → 添加反思笔记（必填三字段）
+  add <错误描述> | <解决方案> | <哲学理解> | <标签> | <严重程度>
+       → 添加时指定标签（逗号分隔）和严重程度（fatal/high/medium/low）
+
+  list                         → 列出全部笔记
+  list <关键词>                → 按关键词语义搜索
+  list tag:<标签>              → 按标签过滤
+  list severity:<级别>         → 按严重程度过滤
+
+  search <查询文本>            → 语义搜索相关笔记
+
+  delete <ref_id>              → 删除指定笔记（如 delete ref_3）
+
+  update <ref_id> | <新错误描述> | <新解决方案> | <新哲学理解>
+  update <ref_id> | <新错误描述> | <新解决方案> | <新哲学理解> | <标签> | <严重程度>
+
+  cleanup <天数>               → 清除 N 天前的旧笔记（如 cleanup 30）
+
+  stats                        → 查看统计概览（按标签 & 严重程度分布）
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+示例：
+  'add 忘记处理空指针 | 添加 is None 检查 | 永远先考虑边界条件'
+  'add token超限导致截断 | 对长文本先切片再送入 | 分治是处理大规模输入的核心 | token,截断,分治 | high'
+  'list'
+  'list token'
+  'list severity:high'
+  'search 空指针异常'
+  'update ref_3 | 更好的错误描述 | 更好的解决方案 | 更深的理解'
+  'delete ref_5'
+  'cleanup 90'
+  'stats'""")
+def reflection(command: str) -> str:
+    global _reflection_id_counter
+
+    cmd = command.strip()
+    if not cmd:
+        return _help_text()
+
+    parts = cmd.split(maxsplit=1)
+    action = parts[0].lower()
+    arg = parts[1] if len(parts) > 1 else ""
+
+    # ── add ──
+    if action == "add":
+        return _cmd_add(arg)
+
+    # ── list ──
+    if action == "list":
+        return _cmd_list(arg)
+
+    # ── search ──
+    if action == "search":
+        return _cmd_search(arg)
+
+    # ── delete ──
+    if action == "delete":
+        return _cmd_delete(arg)
+
+    # ── update ──
+    if action == "update":
+        return _cmd_update(arg)
+
+    # ── cleanup ──
+    if action == "cleanup":
+        return _cmd_cleanup(arg)
+
+    # ── stats ──
+    if action == "stats":
+        return _cmd_stats()
+
+    return f"错误: 未知操作 '{action}'。支持: add / list / search / delete / update / cleanup / stats"
+
+
+# ═══════════════════════════════════════════════════════════
+#  命令实现
+# ═══════════════════════════════════════════════════════════
+
+def _parse_add_arg(arg: str) -> tuple[str, str, str, str, str]:
+    """解析 add/update 参数: 错误|解决方案|哲学|[标签]|[严重程度]"""
+    fields = [f.strip() for f in arg.split("|")]
+    if len(fields) < 3:
+        raise ValueError(
+            "参数不足，需要至少 3 个字段（用 | 分隔）：\n"
+            "  错误描述 | 解决方案 | 哲学理解\n"
+            "  可选追加: | 标签(逗号分隔) | 严重程度(fatal/high/medium/low)"
+        )
+    error_desc = fields[0]
+    solution = fields[1]
+    philosophy = fields[2]
+    tags = fields[3] if len(fields) > 3 and fields[3] else "general"
+    severity = fields[4] if len(fields) > 4 and fields[4] else "medium"
+
+    if severity not in _VALID_SEVERITIES:
+        severity = "medium"
+    return error_desc, solution, philosophy, tags, severity
+
+
+def _cmd_add(arg: str) -> str:
+    if not arg:
+        return "错误: 用法 'add <错误描述> | <解决方案> | <哲学理解>' 或追加 '| <标签> | <严重程度>'"
+
+    try:
+        error_desc, solution, philosophy, tags, severity = _parse_add_arg(arg)
+    except ValueError as e:
+        return f"错误: {e}"
+
+    ref_id = _next_ref_id()
+    ts = _now_iso()
+    page_content = _build_page_content(error_desc, solution, philosophy)
+
+    _reflection_chroma.add_texts(
+        texts=[page_content],
+        ids=[ref_id],
+        metadatas=[{
+            "ref_id": ref_id,
+            "error_desc": error_desc,
+            "solution": solution,
+            "philosophy": philosophy,
+            "tags": tags,
+            "severity": severity,
+            "timestamp": ts,
+        }],
+    )
+    icon = _SEVERITY_ICON.get(severity, "")
+    return (
+        f"✅ 反思笔记已记录 [{ref_id}]\n"
+        f"   {icon} 严重程度: {_SEVERITY_LABEL.get(severity, severity)}\n"
+        f"   🏷 标签: {tags}\n"
+        f"   📅 {ts}\n"
+        f"   ─────────────────\n"
+        f"   ❌ 错误: {error_desc}\n"
+        f"   ✅ 解决: {solution}\n"
+        f"   💡 领悟: {philosophy}"
+    )
+
+
+def _cmd_list(arg: str) -> str:
+    # 解析过滤器
+    tag_filter = None
+    severity_filter = None
+    keyword = None
+
+    remain_parts = []
+    for token in arg.split() if arg else []:
+        if token.startswith("tag:"):
+            tag_filter = token[4:]
+        elif token.startswith("severity:"):
+            severity_filter = token[9:]
+        else:
+            remain_parts.append(token)
+
+    keyword = " ".join(remain_parts) if remain_parts else None
+
+    # 有关键词 → 语义搜索
+    if keyword:
+        return _cmd_search_internal(keyword, tag_filter, severity_filter)
+
+    # 无关键词 → 全量列出 + Python 侧过滤
+    try:
+        all_data = _reflection_chroma.get()
+    except Exception as e:
+        logger.warning(f"[reflection] list 获取数据失败: {e}")
+        return "（空）暂无反思笔记。"
+
+    if not all_data or not all_data["ids"]:
+        return "（空）暂无反思笔记。"
+
+    entries = []
+    for i, doc_id in enumerate(all_data["ids"]):
+        meta = all_data["metadatas"][i] if all_data["metadatas"] else {}
+        content = all_data["documents"][i] if all_data["documents"] else ""
+
+        # Python 侧过滤
+        if tag_filter and tag_filter.lower() not in meta.get("tags", "").lower():
+            continue
+        if severity_filter and severity_filter.lower() != meta.get("severity", "").lower():
+            continue
+
+        entries.append({"metadata": meta, "page_content": content})
+
+    return _fmt_notes(entries)
+
+
+def _cmd_search(arg: str) -> str:
+    if not arg:
+        return "错误: 用法 'search <查询文本>' 进行语义搜索"
+    return _cmd_search_internal(arg, tag_filter=None, severity_filter=None)
+
+
+def _cmd_search_internal(query: str, tag_filter: str | None, severity_filter: str | None) -> str:
+    """内部语义搜索，支持额外过滤"""
+    try:
+        results = _reflection_chroma.similarity_search_with_score(query=query, k=10)
+    except Exception as e:
+        logger.warning(f"[reflection] 语义搜索失败: {e}")
+        return f"搜索失败: {e}"
+
+    if not results:
+        return f"未找到与 '{query}' 相关的反思笔记。"
+
+    entries = []
+    for doc, score in results:
+        meta = doc.metadata
+
+        # 过滤
+        if tag_filter and tag_filter.lower() not in meta.get("tags", "").lower():
+            continue
+        if severity_filter and severity_filter.lower() != meta.get("severity", "").lower():
+            continue
+
+        entries.append({
+            "metadata": meta,
+            "page_content": doc.page_content,
+            "similarity": 1.0 - score if score <= 1.0 else 1.0 / (1.0 + score),
+        })
+
+    if not entries:
+        return f"未找到匹配过滤条件的笔记（关键词 '{query}' 有结果但被过滤条件排除）。"
+
+    return _fmt_notes(entries, with_similarity=True)
+
+
+def _cmd_delete(arg: str) -> str:
+    if not arg:
+        return "错误: 用法 'delete <ref_id>'（如 delete ref_3）"
+
+    ref_id = arg.strip()
+    try:
+        _reflection_chroma.delete(ids=[ref_id])
+        return f"🗑 已删除反思笔记 [{ref_id}]。"
+    except Exception as e:
+        logger.warning(f"[reflection] 删除失败: {e}")
+        return f"删除失败: 未找到笔记 [{ref_id}]，或 Chroma 不支持按 ID 删除。\n可尝试: cleanup <天数> 按时间清理。"
+
+
+def _cmd_update(arg: str) -> str:
+    if not arg:
+        return "错误: 用法 'update <ref_id> | <新错误描述> | <新解决方案> | <新哲学理解>' 可追加标签和严重程度"
+
+    fields = [f.strip() for f in arg.split("|")]
+    if len(fields) < 4:
+        return "错误: 需要 ref_id + 三个字段（错误|解决方案|哲学理解），用 | 分隔"
+
+    ref_id = fields[0]
+    try:
+        error_desc, solution, philosophy, tags, severity = _parse_add_arg("|".join(fields[1:]))
+    except ValueError as e:
+        return f"错误: {e}"
+
+    # 先取原记录的时间戳
+    try:
+        existing = _reflection_chroma.get(ids=[ref_id])
+        old_ts = (
+            existing["metadatas"][0].get("timestamp")
+            if existing and existing["metadatas"]
+            else _now_iso()
+        )
+    except Exception:
+        old_ts = _now_iso()
+
+    # 删除旧记录
+    try:
+        _reflection_chroma.delete(ids=[ref_id])
+    except Exception:
+        pass
+
+    # 写入新记录
+    ts = _now_iso()
+    page_content = _build_page_content(error_desc, solution, philosophy)
+    _reflection_chroma.add_texts(
+        texts=[page_content],
+        ids=[ref_id],
+        metadatas=[{
+            "ref_id": ref_id,
+            "error_desc": error_desc,
+            "solution": solution,
+            "philosophy": philosophy,
+            "tags": tags,
+            "severity": severity,
+            "timestamp": old_ts,
+            "updated_at": ts,
+        }],
+    )
+    return f"✅ 反思笔记 [{ref_id}] 已更新。\n   📅 原创建: {old_ts} | 更新于: {ts}"
+
+
+def _cmd_cleanup(arg: str) -> str:
+    if not arg:
+        return "错误: 用法 'cleanup <天数>'，将清除指定天数之前的旧笔记"
+
+    try:
+        days = int(arg.strip())
+    except ValueError:
+        return f"错误: 天数必须是整数，收到 '{arg}'"
+
+    if days <= 0:
+        return "错误: 天数必须大于 0"
+
+    cutoff = datetime.now() - timedelta(days=days)
+    cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+
+    try:
+        all_data = _reflection_chroma.get()
+    except Exception as e:
+        return f"获取数据失败: {e}"
+
+    if not all_data or not all_data["ids"]:
+        return "（空）没有可清理的笔记。"
+
+    to_delete = []
+    kept = 0
+    for i, doc_id in enumerate(all_data["ids"]):
+        meta = all_data["metadatas"][i] if all_data["metadatas"] else {}
+        ts = meta.get("timestamp", "")
+        if ts and ts < cutoff_str:
+            to_delete.append(doc_id)
+        else:
+            kept += 1
+
+    if not to_delete:
+        return f"没有超过 {days} 天的旧笔记（共 {len(all_data['ids'])} 条）。"
+
+    try:
+        _reflection_chroma.delete(ids=to_delete)
+    except Exception as e:
+        logger.warning(f"[reflection] cleanup 批量删除失败: {e}")
+        return f"批量删除失败: {e}"
+
+    return f"🗑 已清除 {len(to_delete)} 条 {days} 天前的旧笔记。\n   ✅ 保留 {kept} 条近期笔记。\n   📅 截止时间: {cutoff_str}"
+
+
+def _cmd_stats() -> str:
+    try:
+        all_data = _reflection_chroma.get()
+    except Exception as e:
+        return f"获取数据失败: {e}"
+
+    if not all_data or not all_data["ids"]:
+        return "📊 暂无反思笔记，无统计数据。"
+
+    total = len(all_data["ids"])
+
+    # 按严重程度统计
+    sev_counts: dict[str, int] = {}
+    # 按标签统计
+    tag_counts: dict[str, int] = {}
+    # 时间范围
+    timestamps: list[str] = []
+
+    for i in range(total):
+        meta = all_data["metadatas"][i] if all_data["metadatas"] else {}
+        sev = meta.get("severity", "medium")
+        sev_counts[sev] = sev_counts.get(sev, 0) + 1
+
+        tags_str = meta.get("tags", "general")
+        for t in tags_str.split(","):
+            t = t.strip()
+            if t:
+                tag_counts[t] = tag_counts.get(t, 0) + 1
+
+        ts = meta.get("timestamp", "")
+        if ts:
+            timestamps.append(ts)
+
+    lines = [
+        "📊 反思笔记本统计",
+        "═" * 40,
+        f"   📝 总计笔记: {total} 条",
+        "",
+        "   严重程度分布:",
+    ]
+    for sev in ["fatal", "high", "medium", "low"]:
+        count = sev_counts.get(sev, 0)
+        if count > 0:
+            icon = _SEVERITY_ICON.get(sev, "❓")
+            label = _SEVERITY_LABEL.get(sev, sev)
+            bar = "█" * min(count, 20)
+            lines.append(f"   {icon} {label}: {count} {bar}")
+
+    lines.append("")
+    lines.append("   标签分布:")
+    sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)
+    for tag, count in sorted_tags[:10]:
+        lines.append(f"   🏷 {tag}: {count}")
+
+    if timestamps:
+        timestamps.sort()
+        lines.append("")
+        lines.append(f"   📅 最早: {timestamps[0]}")
+        lines.append(f"   📅 最新: {timestamps[-1]}")
+
+    return "\n".join(lines)
+
+
+def _help_text() -> str:
+    return """📖 反思笔记本 — 使用指南
+═══════════════════════════════
+add <错误描述> | <解决方案> | <哲学理解> [| <标签> | <严重程度>]
+list [关键词] [tag:标签] [severity:级别]
+search <查询文本>
+delete <ref_id>
+update <ref_id> | <错误> | <解决> | <理解> [| <标签> | <严重程度>]
+cleanup <天数>
+stats"""
+
+"""
+返回rag库搜索总结结果
+"""
+@tool(description='RAG检索总结工具，传入搜素内容，能够返回本地知识库中相关内容的总结')
+def rag_summarize(query:str)->str:
+    return Rag_Summarize.model_summary(query)

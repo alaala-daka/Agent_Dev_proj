@@ -11,4 +11,5 @@ wheels/
 .env
 logs/
 main.py
-SystemConfig.yml
+config/SystemConfig.yml
+CLAUDE.md
