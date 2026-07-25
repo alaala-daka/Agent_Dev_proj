@@ -15,7 +15,7 @@ def md5_file_check(md5_value:str)->bool:
         logger.critical(f"[md5_file_check]提供链接对应内容非文件")
         raise ValueError()
 
-    with open(Rag_Config["md5_storage_path"],'w',encoding=System_Config["encoding"]) as f:
+    with open(Rag_Config["md5_storage_path"],'r',encoding=System_Config["encoding"]) as f:
         for line in f.readlines():
             if md5_value.strip() == line.strip():
                 return True

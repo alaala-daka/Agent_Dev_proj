@@ -12,7 +12,7 @@ def prompt_check(mes):
     print(mes.to_string())
     print('='*20)
     return mes
-class Rag_Summarize(File_Uploader):
+class _Rag_Summarize(File_Uploader):
     def __init__(self) -> None:
         self.retriever=self.get_retriever()
         self.summarize_model=ragsummarizemodel
@@ -38,3 +38,5 @@ class Rag_Summarize(File_Uploader):
         reference=self.get_rag_content(input)
         summary=self.rag_sum_chain.invoke({'reference':reference,'input':input})
         return summary
+
+Rag_Summarize=_Rag_Summarize()
