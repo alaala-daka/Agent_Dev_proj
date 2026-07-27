@@ -1,5 +1,5 @@
 from langchain_chroma import Chroma
-from file_uploader import File_Uploader
+from vector_uploader_service.file_uploader import File_Uploader
 from tool.config_handler import Rag_Config,Prompt_Config
 from factory.model_generator import ragsummarizemodel
 from langchain_core.prompts import ChatPromptTemplate
@@ -14,6 +14,7 @@ def prompt_check(mes):
     return mes
 class _Rag_Summarize(File_Uploader):
     def __init__(self) -> None:
+        super().__init__()
         self.retriever=self.get_retriever()
         self.summarize_model=ragsummarizemodel
         self.sys_prompt=open(Prompt_Config['rag_prompt_path'],'r',encoding='utf-8').read()
@@ -24,12 +25,12 @@ class _Rag_Summarize(File_Uploader):
                 ('human',"{input}"),
             ]
         )
-        self.rag_sum_chain=self.chat_tem|prompt_check|self.summarize_model|StrOutputParser()
+        self.rag_sum_chain=self.chat_tem|self.summarize_model|StrOutputParser()
     def get_rag_content(self,input:str)->str:
         """
         总结Chroma库返回的内容
         """
-        chroma_feedback=self.chroma.similarity_search(query=input,k=6)
+        chroma_feedback=self.chroma.similarity_search(query=input,k=4)
         collected_feedback=''
         for doc in chroma_feedback:
             collected_feedback+=f"- {doc.page_content}\n"

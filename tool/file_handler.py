@@ -1,7 +1,7 @@
 import os
 import hashlib
 from typing import List
-from logger_handler import logger
+from tool.logger_handler import logger
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader,TextLoader
 def get_file_md5_hex(abs_path:str):

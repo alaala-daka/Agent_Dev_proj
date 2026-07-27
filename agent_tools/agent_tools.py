@@ -6,6 +6,8 @@ from tavily import TavilyClient
 from tool.config_handler import System_Config, Chroma_Config
 from tool.logger_handler import logger
 from vector_uploader_service.rag_summarize import Rag_Summarize
+from dotenv import load_dotenv
+load_dotenv()
 """
 Travily网络搜索工具
 """

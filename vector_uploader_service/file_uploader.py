@@ -6,7 +6,7 @@ from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_deepseek import ChatDeepSeek
 from tool.config_handler import Chroma_Config,Prompt_Config
-from md5_tools import md5_file_check,md5_loader,md5_trans
+from vector_uploader_service.md5_tools import md5_file_check,md5_loader,md5_trans
 from tool.file_handler import textloader,pdfloader,listdir_readable_file
 from tool.logger_handler import logger
 from langchain_core.prompts import SystemMessagePromptTemplate,ChatPromptTemplate
@@ -26,7 +26,7 @@ class File_Uploader():
             collection_name=Chroma_Config['collection_name'],
             persist_directory=Chroma_Config['persist_directory'],
             embedding_function=DashScopeEmbeddings(
-                model=Chroma_Config['embeddiing_model_name']
+                model=Chroma_Config['embedding_model_name']
                 )
         )
         self.splitters_model=ChatDeepSeek(

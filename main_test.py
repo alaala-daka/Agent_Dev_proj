@@ -1,6 +1,9 @@
 """
-test
+Agent test
 """
+from dotenv import load_dotenv
+load_dotenv()
+
 from Agent import Agent
 if __name__=='__main__':
     a=Agent()

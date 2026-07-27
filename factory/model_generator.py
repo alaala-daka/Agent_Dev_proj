@@ -1,7 +1,9 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_deepseek import ChatDeepSeek
 from tool.config_handler import  Chroma_Config,Agent_Config,Rag_Config
-from langchain_community.chat_models import moonshot
 from abc import ABC,abstractmethod
 
 class BaseModelGenerator(ABC):
