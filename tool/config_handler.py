@@ -1,6 +1,6 @@
 import yaml
 import os
-from path_tool import get_abs_path
+from tool.path_tool import get_abs_path
 
 def RagLoadConfig(abs_path:str|None=None,encoding='utf-8'):
     if not abs_path:
