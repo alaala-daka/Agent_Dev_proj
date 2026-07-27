@@ -1,3 +1,4 @@
 embedding_model_name: text-embedding-v4
 md5_storage_path: vector_uploader_service/md5_value_storage.txt
+file_record_path: vector_uploader_service/file_record.jsonl
 rag_summarize_model_name: deepseek-v4-flash
