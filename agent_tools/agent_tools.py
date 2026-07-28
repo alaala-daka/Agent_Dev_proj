@@ -24,13 +24,13 @@ def search(query:str)->str:
     return search_content
 
 """
-计算器工具 — 基于AST的安全表达式求值
+计算器工具 -- 基于AST的安全表达式求值
 """
 import ast
 import math
 import operator
 
-# 安全求值器：仅允许白名单内的节点和运算符，避免 eval 的安全风险
+# 安全求值器:仅允许白名单内的节点和运算符，避免 eval 的安全风险
 _SAFE_OPS = {
     ast.Add:      operator.add,
     ast.Sub:      operator.sub,
@@ -99,7 +99,7 @@ def _safe_eval(node: ast.AST) -> float:
     raise ValueError(f"表达式包含不支持的操作: {ast.dump(node)}")
 
 
-@tool(description="""安全计算器工具，基于AST白名单求值，支持以下运算和函数：
+@tool(description="""安全计算器工具，基于AST白名单求值，支持以下运算和函数:
 
 运算符: + - * / // % ** （及正负号 +x / -x）
 常量: pi, e
@@ -119,17 +119,17 @@ def calculator(expression: str) -> str:
             result = int(result)
         return str(result)
     except SyntaxError:
-        return f"错误: 表达式语法无效 —— '{expression}'"
+        return f"错误: 表达式语法无效 ---- '{expression}'"
     except (ValueError, ZeroDivisionError, OverflowError) as e:
         return f"错误: {e}"
 
 """
-待办清单工具 — 支持 Agent 自主管理任务计划与执行进度
+待办清单工具 -- 支持 Agent 自主管理任务计划与执行进度
 """
 from datetime import datetime
 from typing import Any
 
-# 内存存储：任务列表，每条记录为 {"id", "title", "desc", "status", "created_at", "done_at"}
+# 内存存储:任务列表，每条记录为 {"id", "title", "desc", "status", "created_at", "done_at"}
 _TODOS: list[dict[str, Any]] = []
 _TODO_ID_COUNTER = 0
 
@@ -163,7 +163,7 @@ def _format_todos(todos: list[dict[str, Any]]) -> str:
 
 @tool(description="""待办清单工具，用于记录和追踪任务计划与执行进度。
 
-操作命令（输入以下格式的字符串）：
+操作命令（输入以下格式的字符串）:
   add <标题>                    → 添加新任务
   add <标题> | <描述>           → 添加带描述的任务
   list [all|pending|done]       → 列出任务（默认 all）
@@ -173,7 +173,7 @@ def _format_todos(todos: list[dict[str, Any]]) -> str:
   clear done                    → 清除所有已完成任务
   reset                         → 清空全部任务
 
-示例：'add 实现登录模块 | 含OAuth和JWT两种方式'、'list pending'、'done 3'""")
+示例:'add 实现登录模块 | 含OAuth和JWT两种方式'、'list pending'、'done 3'""")
 def todo(command: str) -> str:
     global _TODO_ID_COUNTER
 
@@ -265,10 +265,10 @@ def todo(command: str) -> str:
     return f"错误: 未知操作 '{action}'。支持: add / list / doing / done / delete / clear done / reset"
 
 """
-反思总结笔记本工具 — Agent 任务结束时的经验沉淀、检索与管理
+反思总结笔记本工具 -- Agent 任务结束时的经验沉淀、检索与管理
 ================================================================
-存储：专有 Chroma collection，支持语义搜索
-触发：Middleware 在任务完成时注入反思提示，Agent 主动调用本工具记录
+存储:专有 Chroma collection，支持语义搜索
+触发:Middleware 在任务完成时注入反思提示，Agent 主动调用本工具记录
 """
 from datetime import datetime, timedelta
 from typing import Any
@@ -301,8 +301,8 @@ _SEVERITY_LABEL: dict[str, str] = {
 _VALID_SEVERITIES = frozenset(_SEVERITY_ICON.keys())
 
 # ID 计数器（基于现有 note 数量初始化）
-_existing = _reflection_chroma.get()
-_reflection_id_counter = len(_existing["ids"]) if _existing and _existing["ids"] else 0
+
+_reflection_id_counter = len(_reflection_chroma.get(include=[])["ids"])
 
 
 def _next_ref_id() -> str:
@@ -314,9 +314,9 @@ def _next_ref_id() -> str:
 def _build_page_content(error_desc: str, solution: str, philosophy: str) -> str:
     """组装入库文本，便于语义搜索时匹配完整信息"""
     parts = [
-        f"错误描述：{error_desc}",
-        f"解决方案：{solution}",
-        f"哲学理解：{philosophy}",
+        f"错误描述:{error_desc}",
+        f"解决方案:{solution}",
+        f"哲学理解:{philosophy}",
     ]
     return "\n".join(parts)
 
@@ -356,7 +356,7 @@ def _fmt_notes(entries: list[dict[str, Any]], with_similarity: bool = False) -> 
 存储于专有向量库，支持语义搜索，让 Agent 能在未来遇到相似场景时检索历史教训。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-操作命令（输入以下格式的字符串）：
+操作命令（输入以下格式的字符串）:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   add <错误描述> | <解决方案> | <哲学理解>
@@ -381,7 +381,7 @@ def _fmt_notes(entries: list[dict[str, Any]], with_similarity: bool = False) -> 
   stats                        → 查看统计概览（按标签 & 严重程度分布）
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-示例：
+示例:
   'add 忘记处理空指针 | 添加 is None 检查 | 永远先考虑边界条件'
   'add token超限导致截断 | 对长文本先切片再送入 | 分治是处理大规模输入的核心 | token,截断,分治 | high'
   'list'
@@ -443,7 +443,7 @@ def _parse_add_arg(arg: str) -> tuple[str, str, str, str, str]:
     fields = [f.strip() for f in arg.split("|")]
     if len(fields) < 3:
         raise ValueError(
-            "参数不足，需要至少 3 个字段（用 | 分隔）：\n"
+            "参数不足，需要至少 3 个字段（用 | 分隔）:\n"
             "  错误描述 | 解决方案 | 哲学理解\n"
             "  可选追加: | 标签(逗号分隔) | 严重程度(fatal/high/medium/low)"
         )
@@ -756,7 +756,7 @@ def _cmd_stats() -> str:
 
 
 def _help_text() -> str:
-    return """📖 反思笔记本 — 使用指南
+    return """📖 反思笔记本 -- 使用指南
 ═══════════════════════════════
 add <错误描述> | <解决方案> | <哲学理解> [| <标签> | <严重程度>]
 list [关键词] [tag:标签] [severity:级别]
@@ -769,6 +769,47 @@ stats"""
 """
 返回rag库搜索总结结果
 """
-@tool(description='RAG检索总结工具，传入搜素内容，能够返回本地知识库中相关内容的总结')
+@tool(description='RAG检索总结工具，传入搜索内容，能够返回本地知识库中相关内容的总结')
 def rag_summarize(query:str)->str:
     return Rag_Summarize.model_summary(query)
+
+"""
+用户交互提问工具 -- 需求澄清与信息补充
+=========================================
+用途：当 Agent 对用户意图、需求细节或技术约束的把握不足 95% 时，主动向用户发起提问以消除歧义。
+
+调用原则：
+  1. 每次只问一个问题 -- 聚焦单一决策点，避免让用户一次性回答多个问题
+  2. 可连续调用 -- 一个问题澄清后再问下一个，逐步收敛至 >=95% 的理解度
+  3. 问题应具体、可操作 -- 避免笼统的「还有什么需要补充的吗」，而是给出明确选项或具体方向
+  4. 提问时机：
+     a. 用户初始需求模糊，关键信息缺失（如技术栈未定、数据格式不明、目标平台未说明）
+     b. 任务执行中途遇到岔路口需要用户决策（如多种实现方案、取舍权衡）
+     c. 工具返回结果存在歧义，需要用户确认解读方向
+     d. 任务范围出现膨胀风险，需要用户确认优先级或裁剪范围
+
+问题设计指南：
+  - 优：用「你倾向于 A 方案还是 B 方案？」替代「你想怎么做？」
+  - 优：用「数据源是 MySQL 还是 PostgreSQL？」替代「用什么数据库？」
+  - 优：必要时给出推荐选项并附简短理由，如「推荐 A 因为安全性更高，你接受吗？」
+  - 劣：一次性抛出多个无关问题、过于开放式的提问、用技术黑话让用户困惑
+"""
+@tool(description="""需求澄清与信息补充工具 -- 当 Agent 对用户意图的理解不足 95% 时主动提问。
+
+调用规则:
+  - 每次只问一个问题（聚焦单一决策点）
+  - 可连续多次调用，逐层深入，直至理解度 >= 95%
+  - 问题应具体明确，最好提供选项而非开放式提问
+  - 不猜测用户意图，不替用户做主观决策
+
+适用场景:
+  - 用户需求模糊、关键信息缺失（技术栈/数据格式/平台/范围）
+  - 执行中途遇到多方案分叉需要用户决策
+  - 工具返回结果存在歧义需用户确认
+  - 任务范围可能膨胀需确认优先级
+
+输入: 一个清晰、具体的问题字符串
+返回: 用户的回答字符串（以 [user回答] 为前缀）""")
+def ask_for_answer(query:str)->str:
+    user_answer=input(f"[Agent提问]{query}")
+    return f'[user回答]{user_answer}'
