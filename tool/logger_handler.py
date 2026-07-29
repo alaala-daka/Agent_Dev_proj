@@ -57,7 +57,7 @@ logger.add(
         "<level>{message}</level>"   
         "{extra}"                        # 日志正文
     ),
-    level="DEBUG",                                           # 控制台显示 DEBUG 及以上的全部级别
+    level="INFO",                                           # 控制台显示 INFO 及以上的全部级别
     colorize=True,                                           # 开启彩色输出
 )
 

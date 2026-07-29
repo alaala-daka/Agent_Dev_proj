@@ -10,7 +10,7 @@ class Agent():
     def __init__(self) -> None:
         self.agent=create_agent(
             model=chatmodel,
-            middleware=[tool_monitor,task_reflection_trigger],
+            middleware=[task_reflection_trigger,tool_monitor],
             tools=[calculator,todo,search,reflection,rag_summarize],
             system_prompt=system_prompt_load()   
         )

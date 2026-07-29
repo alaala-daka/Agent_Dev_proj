@@ -7,6 +7,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_deepseek import ChatDeepSeek
 from tool.config_handler import Chroma_Config,Prompt_Config
 from vector_uploader_service.md5_tools import md5_file_check,md5_loader,md5_trans
+from vector_uploader_service.file_record import record_file
 from tool.file_handler import textloader,pdfloader,listdir_readable_file
 from tool.logger_handler import logger
 from langchain_core.prompts import SystemMessagePromptTemplate,ChatPromptTemplate
@@ -74,9 +75,11 @@ class File_Uploader():
         res=self.chain.invoke({'input':upload_content})
         content_processed=self.textsplitter.split_text(res)
         metadatas={"source":os.path.basename(abs_path) or None,"timestamp":datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-        self.chroma.add_texts(content_processed,ids=[f'{os.path.basename(abs_path)}id{num}' for num in range(1,len(content_processed)+1)],metadatas=[metadatas for _ in range(0,len(content_processed))])
+        chroma_ids=[f'{os.path.basename(abs_path)}id{num}' for num in range(1,len(content_processed)+1)]
+        self.chroma.add_texts(content_processed,ids=chroma_ids,metadatas=[metadatas for _ in range(0,len(content_processed))])
         logger.info(f'[file_upload]{abs_path}对应文件被成功储存')
         md5_loader(md5_val)
+        record_file(abs_path,chroma_ids,Chroma_Config['collection_name'])
     def dir_upload(self,abs_path:str):
         """
         批量上传目录中的 .txt 和 .pdf 至向量数据库。
@@ -127,6 +130,7 @@ class File_Uploader():
 
         # --- 2. 逐批处理（与 file_upload 相同管线） ---
         total_chunks=0
+        all_chroma_ids=[]  # 收集所有批次的 chroma ID，用于 file_record
         for batch_idx,batch_content in enumerate(batches):
             if not batch_content.strip():
                 continue
@@ -149,8 +153,13 @@ class File_Uploader():
             batch_ids=[f"{file_name}_b{batch_idx}c{i}" for i in range(len(chunks))]
             self.chroma.add_texts(chunks,ids=batch_ids,metadatas=[meta]*len(chunks))
             md5_loader(md5_val)
+            all_chroma_ids.extend(batch_ids)
 
             total_chunks+=len(chunks)
+
+        # 记录文件上传信息，便于后期删除
+        if all_chroma_ids:
+            record_file(abs_path,all_chroma_ids,Chroma_Config['collection_name'])
 
         logger.info(f"[_batch_upload] {file_name} → {total_chunks} chunks 入库")
         return total_chunks
@@ -190,3 +199,5 @@ class File_Uploader():
     def get_retriever(self):
         #提供快速入链的功能
         return self.chroma.as_retriever(search_kwargs={"k":6})
+
+_file_upload_service=File_Uploader()
