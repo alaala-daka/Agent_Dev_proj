@@ -1,17 +1,28 @@
 from langchain.agents import create_agent
+from langchain_core.messages import HumanMessage
 from factory.model_generator import chatmodel
 from agent_tools.middleware import tool_monitor,task_reflection_trigger
-from agent_tools.agent_tools import search,calculator,todo,reflection,rag_summarize
+from agent_tools.agent_tools import search,calculator,todo,reflection,rag_summarize,get_todo_state,restore_todo_state,reset_todo_state
 from agent_tools.file_manage_tools import file_manage, ask_for_answer
+from agent_tools.session_tool import session as session_tool, set_current_agent
+from session.session_store import (
+    save_session_messages, load_session_messages,
+    list_sessions, delete_session, get_session_info, session_exists,
+    save_session_todos, load_session_todos
+)
 from tool.prompt_loader import system_prompt_load
-from tool.config_handler import FileManage_Config
+from tool.config_handler import FileManage_Config, Session_Config
+from tool.logger_handler import logger
 """
-组建Agent，集成文件管理工具（支持 manual/auto 双模式）
+组建Agent，集成文件管理工具（支持 manual/auto 双模式）与会话管理
 """
 class Agent():
-    def __init__(self) -> None:
+    def __init__(self, session_id: str | None = None) -> None:
+        # ── 会话管理初始化 ──
+        self.session_id = None
+        self.messages = []
+
         # 加载基础系统提示词并附加文件管理模式说明
-        self.messages=[]
         base_prompt = system_prompt_load()
         mode_section = _build_mode_section()
         full_prompt = base_prompt + "\n" + mode_section
@@ -19,18 +30,20 @@ class Agent():
         self.agent=create_agent(
             model=chatmodel,
             middleware=[task_reflection_trigger,tool_monitor],
-            tools=[calculator,todo,search,reflection,rag_summarize,file_manage,ask_for_answer],
+            tools=[calculator,todo,search,reflection,rag_summarize,file_manage,ask_for_answer,session_tool],
             system_prompt=full_prompt
         )
 
+        # 注册当前 Agent 实例供 session 工具使用
+        set_current_agent(self)
+
+        # 加载或创建会话
+        if session_id:
+            self._load_session_state(session_id)
+        # session_id 为 None 时保持 ephemeral 模式（不持久化）
+
     def stream(self,query:str):
-        #msg_dict={
-        # 'messages':  
-        # [      
-        #        {'role':'user','content':query}
-        #   ]
-        #}
-        self.messages.append({'role':'user','content':query})
+        self.messages.append(HumanMessage(content=query))
         msg_dict={
             'messages':self.messages
         }
@@ -40,6 +53,77 @@ class Agent():
                 yield mes.content.strip()+'\n'
             last_mes=chunk["messages"][-1]
             self.messages.append(last_mes)
+
+        # 每轮对话结束后自动保存（如果会话活跃）
+        if self.session_id and Session_Config.get("auto_save", True):
+            self._save_session_state()
+
+    # ── 会话状态管理 ──
+
+    def _load_session_state(self, session_id: str) -> None:
+        """从磁盘加载会话的消息和 todo 状态"""
+        messages = load_session_messages(session_id)
+        if messages is not None:
+            self.messages = messages
+            self.session_id = session_id
+            todos_state = load_session_todos(session_id)
+            if todos_state:
+                restore_todo_state(*todos_state)
+            logger.info(f"[Agent] 已加载会话 [{session_id}]：{len(self.messages)} 条消息")
+        else:
+            self.session_id = session_id
+            self._save_session_state()
+            logger.info(f"[Agent] 已创建新会话 [{session_id}]")
+
+    def _save_session_state(self) -> None:
+        """保存当前消息和 todo 状态到磁盘"""
+        if not self.session_id:
+            return
+        save_session_messages(self.session_id, self.messages)
+        todos, counter = get_todo_state()
+        save_session_todos(self.session_id, todos, counter)
+        logger.debug(f"[Agent] 已保存会话 [{self.session_id}]：{len(self.messages)} 条消息")
+
+    # ── 会话操作接口（供 session_tool 和 REPL 调用）──
+
+    def new_session(self, name: str = "") -> str:
+        """创建新会话"""
+        import secrets
+        if self.session_id:
+            self._save_session_state()
+        id_len = Session_Config.get("session_id_length", 8)
+        sid = secrets.token_hex(id_len // 2)
+        self.messages = []
+        self.session_id = sid
+        reset_todo_state()
+        self._save_session_state()
+        logger.info(f"[Agent] 创建新会话 [{sid}]" + (f" —— {name}" if name else ""))
+        return sid
+
+    def switch_session(self, session_id: str) -> bool:
+        """切换到指定会话"""
+        if not session_exists(session_id):
+            return False
+        if self.session_id:
+            self._save_session_state()
+        self.messages = []
+        self._load_session_state(session_id)
+        logger.info(f"[Agent] 已切换到会话 [{session_id}]")
+        return True
+
+    def list_sessions(self) -> list[dict]:
+        """列出所有已保存的会话"""
+        return list_sessions()
+
+    def delete_session(self, session_id: str) -> bool:
+        """删除指定会话（不能删除当前活跃会话）"""
+        if session_id == self.session_id:
+            return False
+        return delete_session(session_id)
+
+    def get_session_info(self, session_id: str) -> dict | None:
+        """获取会话详细信息"""
+        return get_session_info(session_id)
 
 def _build_mode_section() -> str:
     """根据 FileManageConfig 中的模式，构建附加到系统提示词的模式说明"""

@@ -14,3 +14,4 @@ main.py
 config/SystemConfig.yml
 CLAUDE.md
 Chromadb/
+sessions/

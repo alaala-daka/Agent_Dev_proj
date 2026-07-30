@@ -264,6 +264,29 @@ def todo(command: str) -> str:
 
     return f"错误: 未知操作 '{action}'。支持: add / list / doing / done / delete / clear done / reset"
 
+# ── Todo 状态导出/恢复（供会话持久化使用）──
+
+def get_todo_state() -> tuple:
+    """导出当前 todo 状态快照：(任务列表, ID计数器)"""
+    return list(_TODOS), _TODO_ID_COUNTER
+
+
+def restore_todo_state(todos: list, counter: int) -> None:
+    """从快照恢复 todo 状态"""
+    global _TODOS, _TODO_ID_COUNTER
+    _TODOS.clear()
+    _TODOS.extend(todos)
+    _TODO_ID_COUNTER = counter
+
+
+def reset_todo_state() -> None:
+    """重置 todo 状态"""
+    global _TODOS, _TODO_ID_COUNTER
+    _TODOS.clear()
+    _TODO_ID_COUNTER = 0
+
+
+
 """
 反思总结笔记本工具 -- Agent 任务结束时的经验沉淀、检索与管理
 ================================================================

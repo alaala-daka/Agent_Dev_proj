@@ -45,6 +45,14 @@ Agent_Config=AgentLoadConfig()
 System_Config=SystemLoadConfig()
 FileManage_Config=FileManageLoadConfig()
 
+def SessionLoadConfig(abs_path:str|None=None,encoding='utf-8'):
+    if not abs_path:
+        abs_path=get_abs_path("config/SessionConfig.yml")
+    with open(abs_path,'r',encoding=encoding) as f:
+        return yaml.load(f,Loader=yaml.FullLoader)
+
+Session_Config=SessionLoadConfig()
+
 if __name__=='__main__':
     #module_test
     print(Rag_Config["embedding_model_name"])
