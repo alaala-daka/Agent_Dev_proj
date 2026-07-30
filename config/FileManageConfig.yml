@@ -8,7 +8,7 @@ encoding: utf-8
 # 操作模式: "manual"（手动确认）或 "auto"（自动执行）
 #   manual: 读操作自由，写/删/建目录前必须通过 ask_for_answer 获取用户批准
 #   auto:   自由 CRUD，但禁止删除文件夹、修改系统配置等明显风险操作
-mode: manual
+mode: auto
 
 # 允许操作的根目录列表（相对于项目根目录）
 # ".." 表示项目根目录，可添加子目录如 "workspace/", "output/"
