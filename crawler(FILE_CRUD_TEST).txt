@@ -1,3 +1,7 @@
+"""
+文件读写功能测试
+"""
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """简单的Python爬虫示例 —— 使用 requests + BeautifulSoup 解析HTML"""
