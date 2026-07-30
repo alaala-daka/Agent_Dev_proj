@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""简单的Python爬虫示例 —— 使用 requests + BeautifulSoup 解析HTML"""
+
+import requests
+from bs4 import BeautifulSoup
+
+
+def fetch_and_parse(url: str, timeout: int = 10) -> BeautifulSoup:
+    """请求指定URL并返回BeautifulSoup解析对象"""
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
+    # 1. 发送HTTP GET请求
+    resp = requests.get(url, headers=headers, timeout=timeout)
+    resp.encoding = resp.apparent_encoding  # 自动检测编码
+    resp.raise_for_status()                 # 非200状态码时抛出异常
+
+    # 2. 使用 html.parser 解析HTML文档
+    soup = BeautifulSoup(resp.text, "html.parser")
+    return soup
+
+
+def extract_info(soup: BeautifulSoup) -> dict:
+    """从已解析的HTML中提取基本信息"""
+    return {
+        "title": soup.title.string if soup.title else "（无标题）",
+        "all_links": [
+            (a.get("href"), a.get_text(strip=True))
+            for a in soup.find_all("a") if a.get("href")
+        ],
+        "paragraph_count": len(soup.find_all("p")),
+    }
+
+
+# --- 示例用法 ---
+if __name__ == "__main__":
+    target_url = "https://httpbin.org/html"  # 可用于测试的HTML页面
+    print(f"正在爬取: {target_url}")
+
+    try:
+        soup = fetch_and_parse(target_url)
+        info = extract_info(soup)
+
+        print(f"页面标题: {info['title']}")
+        print(f"段落数量: {info['paragraph_count']}")
+        print(f"链接数量: {len(info['all_links'])}")
+        print("\n前5个链接:")
+        for href, text in info["all_links"][:5]:
+            print(f"  → {text}  ({href})")
+
+    except requests.RequestException as e:
+        print(f"网络请求失败: {e}")
+    except Exception as e:
+        print(f"解析失败: {e}")

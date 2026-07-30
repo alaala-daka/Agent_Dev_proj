@@ -11,6 +11,7 @@ from tool.config_handler import FileManage_Config
 class Agent():
     def __init__(self) -> None:
         # 加载基础系统提示词并附加文件管理模式说明
+        self.messages=[]
         base_prompt = system_prompt_load()
         mode_section = _build_mode_section()
         full_prompt = base_prompt + "\n" + mode_section
@@ -23,16 +24,22 @@ class Agent():
         )
 
     def stream(self,query:str):
+        #msg_dict={
+        # 'messages':  
+        # [      
+        #        {'role':'user','content':query}
+        #   ]
+        #}
+        self.messages.append({'role':'user','content':query})
         msg_dict={
-            'messages':[
-                {'role':'user','content':query}
-            ]
+            'messages':self.messages
         }
         for chunk in self.agent.stream(msg_dict,stream_mode='values'):
             mes=chunk["messages"][-1]
             if mes.content:
                 yield mes.content.strip()+'\n'
-
+            last_mes=chunk["messages"][-1]
+            self.messages.append(last_mes)
 
 def _build_mode_section() -> str:
     """根据 FileManageConfig 中的模式，构建附加到系统提示词的模式说明"""

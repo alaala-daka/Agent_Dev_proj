@@ -7,5 +7,10 @@ load_dotenv()
 from Agent import Agent
 if __name__=='__main__':
     a=Agent()
-    for content in a.stream("客观叙述符号主义在人工智能领域发展的影响"):
-        print(content,flush=True,end='')
+    while True:
+        user_mess=input("User_input(输入'quit'退出本轮对话): ")
+        if 'quit' in user_mess:
+            break
+        for content in a.stream(user_mess):
+            print(content,flush=True,end='')
+    print("本轮对话结束")
