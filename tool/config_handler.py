@@ -31,12 +31,19 @@ def SystemLoadConfig(abs_path:str|None=None,encoding='utf-8'):
         abs_path=get_abs_path("config/SystemConfig.yml")
     with open(abs_path,'r',encoding=encoding) as f:
         return yaml.load(f,Loader=yaml.FullLoader)
-    
+
+def FileManageLoadConfig(abs_path:str|None=None,encoding='utf-8'):
+    if not abs_path:
+        abs_path=get_abs_path("config/FileManageConfig.yml")
+    with open(abs_path,'r',encoding=encoding) as f:
+        return yaml.load(f,Loader=yaml.FullLoader)
+
 Rag_Config=RagLoadConfig()
 Prompt_Config=PromptLoadConfig()
 Chroma_Config=ChromaLoadConfig()
 Agent_Config=AgentLoadConfig()
 System_Config=SystemLoadConfig()
+FileManage_Config=FileManageLoadConfig()
 
 if __name__=='__main__':
     #module_test
