@@ -125,6 +125,56 @@ class Agent():
         """获取会话详细信息"""
         return get_session_info(session_id)
 
+    def get_tool_names(self) -> list[str]:
+        """返回当前 Agent 已注册的工具名称列表"""
+        return [
+            "search", "calculator", "todo", "reflection",
+            "rag_summarize", "file_manage", "ask_for_answer", "session"
+        ]
+
+    @classmethod
+    def create_with_config(
+        cls,
+        session_id: str | None = None,
+        tool_whitelist: list[str] | None = None,
+        model_name: str | None = None,
+    ):
+        """
+        使用指定配置创建 Agent 实例。
+        读取最新的 YAML 配置（而非模块级缓存），支持工具白名单和模型覆盖。
+        """
+        from factory.model_generator import create_chatmodel
+        from tool.config_handler import FileManage_Config
+
+        # 如指定模型，临时替换 chatmodel
+        if model_name:
+            import factory.model_generator as mg
+            mg.chatmodel = create_chatmodel(model_name)
+
+        agent = cls(session_id=session_id)
+
+        # 工具白名单过滤
+        if tool_whitelist:
+            all_tools = {
+                "search": search,
+                "calculator": calculator,
+                "todo": todo,
+                "reflection": reflection,
+                "rag_summarize": rag_summarize,
+                "file_manage": file_manage,
+                "ask_for_answer": ask_for_answer,
+                "session": session_tool,
+            }
+            enabled = [all_tools[name] for name in tool_whitelist if name in all_tools]
+            agent.agent = create_agent(
+                model=agent.agent.model,
+                middleware=agent.agent.middleware,
+                tools=enabled,
+                system_prompt=agent.agent.system_prompt,
+            )
+
+        return agent
+
 def _build_mode_section() -> str:
     """根据 FileManageConfig 中的模式，构建附加到系统提示词的模式说明"""
     mode = FileManage_Config.get("mode", "manual")

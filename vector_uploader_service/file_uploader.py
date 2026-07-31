@@ -6,6 +6,7 @@ from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_deepseek import ChatDeepSeek
 from tool.config_handler import Chroma_Config,Prompt_Config
+from tool.path_tool import get_abs_path
 from vector_uploader_service.md5_tools import md5_file_check,md5_loader,md5_trans
 from vector_uploader_service.file_record import record_file
 from tool.file_handler import textloader,pdfloader,listdir_readable_file
@@ -16,7 +17,8 @@ import datetime
 import os
 
 #def spliter_model prompt
-sys_prompt=SystemMessagePromptTemplate.from_template_file(Prompt_Config["spliter_prompt_path"],input_variables=[])
+sys_prompt=SystemMessagePromptTemplate.from_template_file(
+    get_abs_path(Prompt_Config["spliter_prompt_path"]), input_variables=[])
 
 class File_Uploader():
     """

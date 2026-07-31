@@ -7,9 +7,8 @@ def md5_file_check(md5_value:str)->bool:
     查验文件中是否存储该MD5值
     """
     if not os.path.exists(Rag_Config["md5_storage_path"]):
-        with open(Rag_Config["md5_storage_path"],'r',encoding=System_Config["encoding"]) as f:
-            logger.info("[md5_file_check]md5储值文件未建立，现在初始化")
-            return False
+        logger.info("[md5_file_check]md5储值文件未建立，现在初始化")
+        return False
 
     if not os.path.isfile(Rag_Config["md5_storage_path"]):
         logger.critical(f"[md5_file_check]提供链接对应内容非文件")
@@ -26,7 +25,7 @@ def md5_trans(string:str)->str:
     将传入字符串转化为MD5值
     """
     hash_obj=hashlib.md5()
-    hash_obj.update(string.encode(Rag_Config["encoding"]))
+    hash_obj.update(string.encode(System_Config["encoding"]))
     return hash_obj.hexdigest()
 
 def md5_loader(md5_value:str)->None:

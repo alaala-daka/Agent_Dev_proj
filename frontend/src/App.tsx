@@ -1,0 +1,125 @@
+import React, { useState, useCallback, useRef } from 'react';
+import { AppShell } from './components/layout/AppShell';
+import { ChatArea } from './components/chat/ChatArea';
+import { useWebSocket } from './hooks/useWebSocket';
+import { apiClient } from './api/client';
+import type { DisplayMessage } from './types/chat';
+
+/** 将后端消息格式转换为前端 DisplayMessage */
+function convertBackendMessage(msg: Record<string, unknown>, index: number): DisplayMessage {
+  const type = (msg.type as string) || 'human';
+  const roleMap: Record<string, DisplayMessage['role']> = {
+    human: 'user',
+    ai: 'agent',
+    tool: 'tool',
+    system: 'system',
+  };
+  const role = roleMap[type] || 'agent';
+  // 对 tool message，检查是否包含错误
+  const content = (msg.content as string) || '';
+  const isTool = type === 'tool';
+  const error = msg.error as string | undefined;
+  return {
+    id: `history-${index}`,
+    role: isTool ? 'tool' : role,
+    content: isTool ? (error || content) : content,
+    timestamp: Date.now() - (1000 - index),
+    ...(isTool ? { toolCall: {
+      call_id: `hist-${index}`,
+      tool: (msg.tool as string) || (msg.name as string) || 'unknown',
+      args: (msg.args as Record<string, unknown>) || {},
+      result: error ? undefined : content,
+      error,
+      status: error ? 'error' as const : 'success' as const,
+    }} : {}),
+  };
+}
+
+export default function App() {
+  const [sessionId, setSessionId] = useState('');
+  const [messages, setMessages] = useState<DisplayMessage[]>([]);
+  const [streaming, setStreaming] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const nextSessionIdRef = useRef<string>('');
+
+  const handleMessage = useCallback((msg: DisplayMessage) => {
+    setMessages(prev => {
+      const existing = prev.findIndex(m => m.id === msg.id);
+      if (existing >= 0) {
+        const updated = [...prev];
+        updated[existing] = msg;
+        return updated;
+      }
+      return [...prev, msg];
+    });
+  }, []);
+
+  const handleStreamingChange = useCallback((s: boolean) => {
+    setStreaming(s);
+  }, []);
+
+  const {
+    send, cancel, answerUser, connected,
+    askUser, dismissAskUser,
+  } = useWebSocket({
+    sessionId,
+    onMessage: handleMessage,
+    onStreamingChange: handleStreamingChange,
+  });
+
+  const handleCreateSession = useCallback(async () => {
+    try {
+      const data = await apiClient.createSession('新会话');
+      setSessionId(data.session_id);
+      setMessages([]);
+    } catch (err) {
+      console.error('Failed to create session:', err);
+    }
+  }, []);
+
+  const handleSelectSession = useCallback(async (id: string) => {
+    if (id === sessionId) return;
+    setSessionId(id);
+    setMessages([]);
+    setLoadingHistory(true);
+    nextSessionIdRef.current = id;
+    try {
+      const data = await apiClient.getMessages(id, 0, 200);
+      if (nextSessionIdRef.current !== id) return; // 竞态保护
+      const history: DisplayMessage[] = (data.messages || [])
+        .map((m, i) => convertBackendMessage(m as Record<string, unknown>, i));
+      setMessages(history);
+    } catch (err) {
+      console.error('Failed to load history:', err);
+      if (nextSessionIdRef.current === id) setMessages([]);
+    } finally {
+      if (nextSessionIdRef.current === id) setLoadingHistory(false);
+    }
+  }, [sessionId]);
+
+  return (
+    <AppShell
+      currentSessionId={sessionId}
+      onSelectSession={handleSelectSession}
+      onNewSession={handleCreateSession}
+      configPanelOpen={configOpen}
+      onToggleConfig={() => setConfigOpen(!configOpen)}
+      onConfigPanelClose={() => setConfigOpen(false)}
+    >
+      <ChatArea
+        messages={messages}
+        streaming={streaming}
+        connected={connected}
+        askUser={askUser}
+        hasSession={!!sessionId}
+        loadingHistory={loadingHistory}
+        onSend={send}
+        onCancel={cancel}
+        onAnswerUser={answerUser}
+        onDismissAskUser={dismissAskUser}
+        onCreateSession={handleCreateSession}
+      />
+    </AppShell>
+  );
+}
