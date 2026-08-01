@@ -42,17 +42,21 @@ class Agent():
             self._load_session_state(session_id)
         # session_id 为 None 时保持 ephemeral 模式（不持久化）
 
-    def stream(self,query:str):
+    def stream(self, query: str):
+        from langchain_core.messages import AIMessage
         self.messages.append(HumanMessage(content=query))
-        msg_dict={
-            'messages':self.messages
+        msg_dict = {
+            'messages': self.messages
         }
-        for chunk in self.agent.stream(msg_dict,stream_mode='values'):
-            mes=chunk["messages"][-1]
-            if mes.content:
-                yield mes.content.strip()+'\n'
-            last_mes=chunk["messages"][-1]
-            self.messages.append(last_mes)
+        for chunk in self.agent.stream(msg_dict, stream_mode='values'):
+            mes = chunk["messages"][-1]
+            # 只输出 AI 的回复，跳过用户消息和系统消息（避免重复用户问题）
+            if isinstance(mes, AIMessage) and mes.content:
+                yield mes.content.strip() + '\n'
+            last_mes = chunk["messages"][-1]
+            # 避免重复追加：只追加本轮新产生的消息
+            if last_mes not in self.messages:
+                self.messages.append(last_mes)
 
         # 每轮对话结束后自动保存（如果会话活跃）
         if self.session_id and Session_Config.get("auto_save", True):

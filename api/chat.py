@@ -171,9 +171,18 @@ async def websocket_chat(ws: WebSocket, session_id: str):
                     def run_stream():
                         nonlocal stream_finished
                         try:
+                            user_query = content.strip()
+                            saw_first = False
                             for chunk in agent.stream(content):
                                 if cancel_event.is_set():
                                     break
+                                c = chunk.strip()
+                                # 跳过模型回显的用户输入（第一个非空 chunk 可能与 query 相同或以 query 开头）
+                                if not saw_first and c:
+                                    saw_first = True
+                                    if c == user_query or c.startswith(user_query):
+                                        logger.info(f"[chat] 跳过回显: {c[:80]}")
+                                        continue
                                 chunks.append(chunk)
                             stream_finished = True
                         except Exception as e:
