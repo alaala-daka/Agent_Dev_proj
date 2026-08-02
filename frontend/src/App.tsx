@@ -5,8 +5,8 @@ import { useWebSocket } from './hooks/useWebSocket';
 import { apiClient } from './api/client';
 import type { DisplayMessage } from './types/chat';
 
-/** 将后端消息格式转换为前端 DisplayMessage */
-function convertBackendMessage(msg: Record<string, unknown>, index: number): DisplayMessage {
+/** 将后端消息格式转换为前端 DisplayMessage；无可渲染内容的记录返回 null */
+function convertBackendMessage(msg: Record<string, unknown>, index: number): DisplayMessage | null {
   const type = (msg.type as string) || 'human';
   const roleMap: Record<string, DisplayMessage['role']> = {
     human: 'user',
@@ -16,9 +16,11 @@ function convertBackendMessage(msg: Record<string, unknown>, index: number): Dis
   };
   const role = roleMap[type] || 'agent';
   // 对 tool message，检查是否包含错误
-  const content = (msg.content as string) || '';
+  const content = typeof msg.content === 'string' ? msg.content : '';
   const isTool = type === 'tool';
   const error = msg.error as string | undefined;
+  // 跳过无文本的 AI/用户历史消息（纯 tool_calls 中间步骤 / 历史遗留空记录），避免空气泡
+  if (!isTool && !content.trim()) return null;
   return {
     id: `history-${index}`,
     role: isTool ? 'tool' : role,
@@ -88,7 +90,8 @@ export default function App() {
       const data = await apiClient.getMessages(id, 0, 200);
       if (nextSessionIdRef.current !== id) return; // 竞态保护
       const history: DisplayMessage[] = (data.messages || [])
-        .map((m, i) => convertBackendMessage(m as Record<string, unknown>, i));
+        .map((m, i) => convertBackendMessage(m as Record<string, unknown>, i))
+        .filter((m): m is DisplayMessage => m !== null);
       setMessages(history);
     } catch (err) {
       console.error('Failed to load history:', err);
@@ -98,11 +101,20 @@ export default function App() {
     }
   }, [sessionId]);
 
+  const handleDeleteSession = useCallback((id: string) => {
+    // 删除当前会话时，清空聊天区并回到无会话状态（WebSocket 会自动重连到临时会话）
+    if (id === sessionId) {
+      setSessionId('');
+      setMessages([]);
+    }
+  }, [sessionId]);
+
   return (
     <AppShell
       currentSessionId={sessionId}
       onSelectSession={handleSelectSession}
       onNewSession={handleCreateSession}
+      onDeleteSession={handleDeleteSession}
       configPanelOpen={configOpen}
       onToggleConfig={() => setConfigOpen(!configOpen)}
       onConfigPanelClose={() => setConfigOpen(false)}

@@ -16,6 +16,68 @@ from tool.logger_handler import logger
 """
 组建Agent，集成文件管理工具（支持 manual/auto 双模式）与会话管理
 """
+def _content_to_text(content) -> str:
+    """将消息 content 归一化为纯文本（兼容字符串 / content block 列表）"""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                parts.append(str(block.get("text", "")))
+            else:
+                parts.append(str(getattr(block, "get", lambda k, d="": d)("text", "")))
+        return "".join(parts)
+    return str(content)
+
+
+def _sanitize_history(messages: list) -> list:
+    """修复历史中 tool_calls 与其 ToolMessage 不匹配的记录。
+
+    场景：早期 stream() 只保留最后一条 ToolMessage，导致 AIMessage 的
+    tool_calls 有多条但没有对应的 ToolMessage，DeepSeek 会以 400 拒绝。
+    策略：AIMessage 只保留「后续确有 ToolMessage 回应的」tool_call；
+    其余未匹配的 tool_call 被剥离；完全无匹配且无文本的 AIMessage 直接删除；
+    找不到任何前置 tool_call 的孤儿 ToolMessage 一并删除。
+    """
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    # Pass 1: 对每个 AIMessage，统计其后被 ToolMessage 回应过的 call_id
+    answered: dict = {}
+    for i, m in enumerate(messages):
+        if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
+            answered[i] = set()
+            call_ids = {tc.get("id") for tc in m.tool_calls}
+            for j in range(i + 1, len(messages)):
+                if isinstance(messages[j], ToolMessage):
+                    if messages[j].tool_call_id in call_ids:
+                        answered[i].add(messages[j].tool_call_id)
+
+    # Pass 2: 重建
+    out: list = []
+    kept_tool_ids: set = set()          # 已被保留的 tool_call_id
+    for i, m in enumerate(messages):
+        if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
+            kept = [tc for tc in m.tool_calls if tc.get("id") in answered.get(i, set())]
+            if not kept:
+                # 没有任何有效工具结果：若本身无文本则丢弃，否则退化为纯文本消息
+                if not _content_to_text(m.content).strip():
+                    continue
+                m.tool_calls = []
+            else:
+                m.tool_calls = kept
+                kept_tool_ids.update(tc.get("id") for tc in kept)
+            out.append(m)
+        elif isinstance(m, ToolMessage):
+            if m.tool_call_id in kept_tool_ids:   # 只保留被有效工具调用引用的结果
+                out.append(m)
+        else:
+            out.append(m)
+    return out
+
+
 class Agent():
     def __init__(self, session_id: str | None = None) -> None:
         # ── 会话管理初始化 ──
@@ -44,19 +106,35 @@ class Agent():
 
     def stream(self, query: str):
         from langchain_core.messages import AIMessage
+        query = query.strip()
+        if not query:
+            return
+        self.messages = _sanitize_history(self.messages)
         self.messages.append(HumanMessage(content=query))
-        msg_dict = {
-            'messages': self.messages
-        }
-        for chunk in self.agent.stream(msg_dict, stream_mode='values'):
-            mes = chunk["messages"][-1]
-            # 只输出 AI 的回复，跳过用户消息和系统消息（避免重复用户问题）
-            if isinstance(mes, AIMessage) and mes.content:
-                yield mes.content.strip() + '\n'
-            last_mes = chunk["messages"][-1]
-            # 避免重复追加：只追加本轮新产生的消息
-            if last_mes not in self.messages:
-                self.messages.append(last_mes)
+        # 失败回滚目标：从未产出任何 chunk 时，也保持"历史 + 本轮提问"这一一致状态
+        last_good = list(self.messages)
+        try:
+            msg_dict = {
+                'messages': self.messages
+            }
+            for chunk in self.agent.stream(msg_dict, stream_mode='values'):
+                msgs = chunk.get("messages")
+                if not msgs:
+                    continue
+                # values 模式每次都是完整快照；整体替换可确保 ToolNode 并行返回的
+                # 全部 ToolMessage 都被保留（修复 tool_calls 缺配导致的 400 历史污染）
+                self.messages = list(msgs)   # 拷贝，避免别名到 graph 内部列表
+                last_good = self.messages
+                mes = msgs[-1]
+                # 只输出 AI 的回复，跳过用户消息和系统消息（避免重复用户问题）
+                if isinstance(mes, AIMessage):
+                    text = _content_to_text(mes.content)
+                    if text.strip():
+                        yield text.strip() + '\n'
+        except Exception:
+            # 失败时回滚到最后一个完整快照，绝不留半成品/被污染的历史
+            self.messages = last_good
+            raise
 
         # 每轮对话结束后自动保存（如果会话活跃）
         if self.session_id and Session_Config.get("auto_save", True):
@@ -68,7 +146,8 @@ class Agent():
         """从磁盘加载会话的消息和 todo 状态"""
         messages = load_session_messages(session_id)
         if messages is not None:
-            self.messages = messages
+            # 修复历史遗留的 tool_calls/ToolMessage 不匹配（防止加载后下一次对话被 400 拒绝）
+            self.messages = _sanitize_history(messages)
             self.session_id = session_id
             todos_state = load_session_todos(session_id)
             if todos_state:

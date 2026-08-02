@@ -5,7 +5,7 @@ Agent 中间件
 """
 from langchain.agents.middleware import wrap_tool_call, after_agent
 from typing import Callable
-from langchain_core.messages import ToolMessage, SystemMessage, AIMessage
+from langchain_core.messages import HumanMessage, ToolMessage, SystemMessage, AIMessage
 from langgraph.types import Command
 from langchain.tools.tool_node import ToolCallRequest
 from tool.logger_handler import logger
@@ -39,9 +39,14 @@ def task_reflection_trigger(state, runtime) -> Command | None:
     if not messages:
         return None
 
-    # ── 检测本轮是否执行了实质性工具调用 ──
-    tool_msg_count = sum(1 for m in messages if isinstance(m, ToolMessage))
-    if tool_msg_count == 0:
+    # ── 检测本轮是否执行了实质性工具调用（只统计最近一条用户消息之后，避免历史累计）──
+    turn_tool_msgs = 0
+    for m in reversed(messages):
+        if isinstance(m, HumanMessage) or (isinstance(m, dict) and m.get("role") == "user"):
+            break
+        if isinstance(m, ToolMessage):
+            turn_tool_msgs += 1
+    if turn_tool_msgs == 0:
         return None  # 纯聊天，不需要反思
 
     # ── 检测是否已经做过反思（避免循环）──

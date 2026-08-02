@@ -123,6 +123,10 @@ def deserialize_message(record: dict):
     if msg_type == "system":
         return SystemMessage(content=content)
 
+    # __todo__ 是 todo 状态记录，不是对话消息，加载消息时跳过
+    if msg_type == "__todo__":
+        return None
+
     # 未知类型回退为 human dict
     logger.warning(f"[session] 未知消息类型 '{msg_type}'，回退为 human dict")
     return {"role": "user", "content": content}
@@ -162,6 +166,11 @@ def load_session_messages(session_id: str) -> list | None:
             try:
                 record = json.loads(line)
                 msg = deserialize_message(record)
+                if msg is None:
+                    continue  # __todo__ 等非对话记录
+                # 跳过历史遗留的空用户消息（避免空气泡 & 浪费上下文）
+                if isinstance(msg, dict) and not (msg.get("content") or "").strip():
+                    continue
                 messages.append(msg)
             except json.JSONDecodeError as e:
                 logger.warning(f"[session] 跳过无效行 {line_num}: {e}")
@@ -173,7 +182,7 @@ def load_session_messages(session_id: str) -> list | None:
 
 
 def list_sessions() -> list[dict]:
-    """列出所有会话及其元数据，按最后修改时间倒序"""
+    """列出所有会话及其元数据，按创建时间倒序（最新创建的在最前）"""
     sessions_dir = _get_session_dir()
     if not os.path.exists(sessions_dir):
         return []
@@ -195,8 +204,8 @@ def list_sessions() -> list[dict]:
             except OSError:
                 continue
 
-    # 按更新时间倒序
-    sessions.sort(key=lambda s: s["updated_at"], reverse=True)
+    # 按创建时间倒序
+    sessions.sort(key=lambda s: s["created_at"], reverse=True)
     return sessions
 
 

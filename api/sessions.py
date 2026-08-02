@@ -27,7 +27,7 @@ class SessionInfo(BaseModel):
 
 @router.get("/sessions")
 async def api_list_sessions():
-    """列出所有会话（按更新时间倒序）"""
+    """列出所有会话（按创建时间倒序）"""
     sessions = list_sessions()
     return {"sessions": sessions}
 
@@ -53,9 +53,11 @@ async def api_get_session(session_id: str):
 
 @router.delete("/sessions/{session_id}")
 async def api_delete_session(session_id: str):
-    """删除会话"""
+    """删除会话（同时驱逐 Agent 缓存，防止删除后被断连保存逻辑复活）"""
     if not session_exists(session_id):
         raise HTTPException(status_code=404, detail=f"会话 [{session_id}] 不存在")
+    from api.chat import evict_agent
+    evict_agent(session_id)
     ok = delete_session(session_id)
     if not ok:
         raise HTTPException(status_code=500, detail="删除会话失败")

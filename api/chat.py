@@ -34,6 +34,8 @@ router = APIRouter()
 
 # ── Agent 实例缓存（按 session_id）──
 _agents: dict[str, Agent] = {}
+# 已删除会话墓碑：防止任何后续连接/重连把已删除的会话文件重新创建出来
+_deleted_sessions: set[str] = set()
 _lock = threading.Lock()
 
 
@@ -41,10 +43,30 @@ def _get_or_create_agent(session_id: str | None) -> Agent:
     """获取或创建 Agent 实例"""
     if session_id:
         with _lock:
+            if session_id in _deleted_sessions:
+                # 会话已被删除：按 ephemeral 处理，绝不重建 JSONL 文件
+                logger.info(f"[chat] 已删除会话 {session_id} 以 ephemeral 处理，避免复活")
+                return Agent()
             if session_id not in _agents:
                 _agents[session_id] = Agent(session_id=session_id)
             return _agents[session_id]
     return Agent()  # ephemeral
+
+
+def evict_agent(session_id: str) -> None:
+    """删除会话时调用：从缓存移除 Agent 并记录墓碑，阻止其后续状态保存。
+
+    否则 WebSocket 断开时的 finally 块会调用 _save_session_state()，
+    把刚删除的会话文件重新写回磁盘（"复活"已删除会话）。
+    将 session_id 置为 None 后，_save_session_state() 成为 no-op；
+    记录墓碑后，_get_or_create_agent 也不会再为该 id 重建 Agent/文件。
+    """
+    with _lock:
+        agent = _agents.pop(session_id, None)
+        _deleted_sessions.add(session_id)
+    if agent is not None:
+        agent.session_id = None
+        logger.info(f"[chat] 已驱逐 Agent 缓存: session={session_id}")
 
 
 # ── ask_for_answer 的 WebSocket 适配 ──
@@ -128,6 +150,22 @@ def _unwrap_input(original_input):
     builtins.input = original_input
 
 
+async def _send_chunk(ws: WebSocket, chunk: str) -> None:
+    """发送单个 chunk：仅当它是带 type 的内部结构消息时原样发送，
+    否则一律包装为 {"type":"chunk"}；空白内容直接丢弃。"""
+    try:
+        parsed = json.loads(chunk)
+        if isinstance(parsed, dict) and isinstance(parsed.get("type"), str):
+            await ws.send_json(parsed)
+            return
+    except (json.JSONDecodeError, TypeError):
+        pass
+    stripped = chunk.strip()
+    if not stripped:
+        return
+    await ws.send_json({"type": "chunk", "content": stripped})
+
+
 # ── WebSocket 端点 ──
 
 @router.websocket("/ws/chat/{session_id}")
@@ -160,7 +198,9 @@ async def websocket_chat(ws: WebSocket, session_id: str):
 
                 # 包装 input() 为 WebSocket 版本
                 original_input = _wrap_input_for_websocket(ws)
-                cancel_event.clear()
+                # 每回合独立的取消事件：旧回合的取消状态不会泄漏到新回合，
+                # 已取消回合的线程会一直看到 is_set() 而终止，避免双流并行污染消息历史
+                cancel_event = asyncio.Event()
 
                 try:
                     # 在单独的线程中运行 Agent.stream（因为它是同步生成器）
@@ -177,13 +217,15 @@ async def websocket_chat(ws: WebSocket, session_id: str):
                                 if cancel_event.is_set():
                                     break
                                 c = chunk.strip()
-                                # 跳过模型回显的用户输入（第一个非空 chunk 可能与 query 相同或以 query 开头）
-                                if not saw_first and c:
+                                if not c:
+                                    continue  # 过滤空白 chunk（不再产生 {"content":""}）
+                                # 仅「逐字复述用户问题」才跳过回显，避免误删合法回复
+                                if not saw_first:
                                     saw_first = True
-                                    if c == user_query or c.startswith(user_query):
+                                    if c == user_query:
                                         logger.info(f"[chat] 跳过回显: {c[:80]}")
                                         continue
-                                chunks.append(chunk)
+                                chunks.append(c + '\n')
                             stream_finished = True
                         except Exception as e:
                             logger.exception(f"[chat] Agent 流错误")
@@ -192,33 +234,49 @@ async def websocket_chat(ws: WebSocket, session_id: str):
                     stream_thread = threading.Thread(target=run_stream)
                     stream_thread.start()
 
-                    # 等待流完成或取消
-                    while stream_thread.is_alive():
-                        # 检查是否有新的 chunks
+                    # 并发泵：发送 chunks 的同时读取入站消息（cancel / user_answer）。
+                    # 旧版 pump 在 turn 期间从不调用 ws.receive()，导致：
+                    #   1) cancel 消息要等整个 turn 结束才被读到 → 停止按钮是死控件；
+                    #   2) ask_for_answer 的 user_answer 也无法即时恢复等待中的协程。
+                    # 用 asyncio.wait_for 短超时轮询入站消息，两个问题一并解决。
+                    while True:
+                        # 1) 先发完当前积累的 chunks
                         while chunks:
-                            chunk = chunks.pop(0)
-                            try:
-                                msg = json.loads(chunk)
-                                await ws.send_json(msg)
-                            except (json.JSONDecodeError, TypeError):
-                                # 纯文本块
-                                await ws.send_json({
-                                    "type": "chunk",
-                                    "content": chunk.strip(),
-                                })
-                        await asyncio.sleep(0.05)
-
-                    # 处理剩余 chunks
-                    while chunks:
-                        chunk = chunks.pop(0)
+                            await _send_chunk(ws, chunks.pop(0))
+                        # 2) 流线程结束则收尾
+                        if not stream_thread.is_alive():
+                            break
+                        # 3) 短等待入站消息；超时则继续泵
                         try:
-                            msg = json.loads(chunk)
-                            await ws.send_json(msg)
-                        except (json.JSONDecodeError, TypeError):
-                            await ws.send_json({
-                                "type": "chunk",
-                                "content": chunk.strip(),
-                            })
+                            data = await asyncio.wait_for(ws.receive(), timeout=0.05)
+                        except asyncio.TimeoutError:
+                            continue
+                        raw = data.get("text")
+                        if not raw:
+                            continue
+                        try:
+                            msg = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+                        mtype = msg.get("type", "")
+                        if mtype == "cancel":
+                            cancel_event.set()
+                            break
+                        elif mtype == "user_answer":
+                            request_id = msg.get("request_id", "")
+                            answer = msg.get("answer", "rejected")
+                            detail = msg.get("detail", "")
+                            result = f"用户回答: {answer}"
+                            if detail:
+                                result += f" —— {detail}"
+                            resolve_user_answer(request_id, result)
+
+                    # 处理剩余 chunks（客户端可能已断开，容错）
+                    try:
+                        while chunks:
+                            await _send_chunk(ws, chunks.pop(0))
+                    except (WebSocketDisconnect, RuntimeError):
+                        pass
 
                     if cancel_event.is_set():
                         await ws.send_json({"type": "interrupted"})

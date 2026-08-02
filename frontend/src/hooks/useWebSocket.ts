@@ -63,9 +63,15 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange }: UseWeb
       ws.onclose = () => {
         if (!mountedRef.current) return;
         setConnected(false);
-        // 如果是主动关闭（session 切换），不自动重连
-        if (intentionalCloseRef.current) return;
-        // 自动重连（指数退避）
+        // 无论何种原因关闭，都要退出"工作中"状态，防止指示器/停止按钮卡死
+        onStreamingChange(false);
+        if (intentionalCloseRef.current) {
+          // 主动关闭（切换会话）：丢弃未完成的流
+          pendingMsgRef.current = null;
+          return;
+        }
+        // 意外断开：保留已输出的部分内容，随后自动重连（指数退避）
+        flushPending();
         if (reconnectAttempt.current < 10) {
           const delay = Math.min(1000 * 2 ** reconnectAttempt.current, 30000);
           reconnectAttempt.current++;
@@ -134,6 +140,7 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange }: UseWeb
   }, [onMessage, onStreamingChange]);
 
   function appendToPending(content: string, streaming: boolean) {
+    if (!content || !content.trim()) return; // 空 chunk 不创建气泡
     if (!pendingMsgRef.current) {
       pendingMsgRef.current = {
         id: `agent-${Date.now()}`,
@@ -182,6 +189,11 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange }: UseWeb
 
   function flushPending() {
     if (pendingMsgRef.current) {
+      // 不提交空白气泡
+      if (!pendingMsgRef.current.content.trim()) {
+        pendingMsgRef.current = null;
+        return;
+      }
       pendingMsgRef.current.isStreaming = false;
       onMessage({ ...pendingMsgRef.current });
       pendingMsgRef.current = null;
@@ -189,6 +201,13 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange }: UseWeb
   }
 
   const send = useCallback((content: string) => {
+    if (!content || !content.trim()) return; // 空输入不发送
+    // 连接未就绪时直接丢弃输入，避免消息静默丢失后 streaming 卡在 true
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.warn('[WS] 连接未就绪，消息未发送:', content.slice(0, 60));
+      return;
+    }
     flushPending();
     const userMsg: DisplayMessage = {
       id: `user-${Date.now()}`,
@@ -199,8 +218,10 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange }: UseWeb
     onMessage(userMsg);
 
     const msg: ClientMessage = { type: 'chat', content };
-    wsRef.current?.send(JSON.stringify(msg));
-  }, [onMessage]);
+    ws.send(JSON.stringify(msg));
+    // 发送即进入"工作中"状态（覆盖模型思考/工具调用阶段，首个 chunk 前的空窗期）
+    onStreamingChange(true);
+  }, [onMessage, onStreamingChange]);
 
   const cancel = useCallback(() => {
     const msg: ClientMessage = { type: 'cancel' };
@@ -228,6 +249,10 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange }: UseWeb
         wsRef.current.close();
         wsRef.current = null;
       }
+      // 切换会话/卸载时强制退出"工作中"状态并丢弃未完成流，
+      // 否则新会话的聊天区会残留 AgentWorkingIndicator 和红色取消按钮
+      onStreamingChange(false);
+      pendingMsgRef.current = null;
     };
   }, [connect]);
 

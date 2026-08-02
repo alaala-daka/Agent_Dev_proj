@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Settings, MessageSquare } from 'lucide-react';
+import { Plus, Search, Settings, MessageSquare, Trash2, Check, X } from 'lucide-react';
 import { useSessions } from '../../hooks/useSessions';
 import type { Session } from '../../types/session';
 
@@ -8,6 +8,7 @@ interface SidebarProps {
   onSelectSession: (id: string) => void;
   onNewSession: () => void;
   onToggleConfig: () => void;
+  onDeleteSession: (id: string) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -15,9 +16,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectSession,
   onNewSession,
   onToggleConfig,
+  onDeleteSession,
 }) => {
-  const { sessions, loading, refresh } = useSessions();
+  const { sessions, loading, refresh, deleteSession } = useSessions();
   const [search, setSearch] = useState('');
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // 当 sessionId 更改或创建新会话时刷新列表
   useEffect(() => {
@@ -27,6 +31,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const filtered = sessions.filter((s: Session) =>
     s.session_id.toLowerCase().includes(search.toLowerCase())
   );
+
+  const handleDelete = async (id: string) => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await deleteSession(id);
+      onDeleteSession(id);
+    } catch (err) {
+      console.error('Failed to delete session:', err);
+    } finally {
+      setDeleting(false);
+      setConfirmingId(null);
+    }
+  };
 
   return (
     <aside className="w-[280px] flex-shrink-0 glass border-r border-[#E5E5EA] flex flex-col">
@@ -86,12 +104,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {s.session_id.slice(0, 12)}
                 </div>
                 <div className="text-[11px] text-[#AEAEB2] font-sidebar">
-                  {s.message_count} 条消息
+                  {s.message_count} 条消息{s.created_at ? ` · ${s.created_at.slice(5, 16)}` : ''}
                 </div>
               </div>
-              <span className="text-[10px] text-[#AEAEB2] font-sidebar hidden group-hover:inline">
-                {s.updated_at?.slice(5, 16) || ''}
-              </span>
+              {confirmingId === s.session_id ? (
+                <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => handleDelete(s.session_id)}
+                    disabled={deleting}
+                    className="p-1 rounded-md bg-[#FF3B30] text-white hover:bg-red-600
+                      transition-colors disabled:opacity-50"
+                    title="确认删除"
+                  >
+                    <Check size={12} />
+                  </button>
+                  <button
+                    onClick={() => setConfirmingId(null)}
+                    className="p-1 rounded-md bg-[#E5E5EA] text-[#6E6E73] hover:bg-[#D2D2D7]
+                      transition-colors"
+                    title="取消"
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ) : (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmingId(s.session_id);
+                  }}
+                  className="p-1 rounded-md text-[#AEAEB2] hover:text-[#FF3B30] hover:bg-[#FFF5F5]
+                    transition-colors opacity-0 group-hover:opacity-100"
+                  title="删除会话"
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </div>
           ))
         )}

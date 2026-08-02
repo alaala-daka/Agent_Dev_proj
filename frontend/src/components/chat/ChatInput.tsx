@@ -14,13 +14,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, onCancel, streamin
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
-    if (!trimmed || disabled) return;
+    // 流式生成期间忽略回车发送，防止 flushPending 截断正在输出的气泡并排队第二个回合
+    if (!trimmed || disabled || streaming) return;
     onSend(trimmed);
     setValue('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [value, disabled, onSend]);
+  }, [value, disabled, streaming, onSend]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {

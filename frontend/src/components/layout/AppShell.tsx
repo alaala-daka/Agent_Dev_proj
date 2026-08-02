@@ -7,6 +7,7 @@ interface AppShellProps {
   currentSessionId: string;
   onSelectSession: (id: string) => void;
   onNewSession: () => void;
+  onDeleteSession: (id: string) => void;
   configPanelOpen: boolean;
   onToggleConfig: () => void;
   onConfigPanelClose: () => void;
@@ -17,6 +18,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   currentSessionId,
   onSelectSession,
   onNewSession,
+  onDeleteSession,
   configPanelOpen,
   onToggleConfig,
   onConfigPanelClose,
@@ -29,6 +31,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         onSelectSession={onSelectSession}
         onNewSession={onNewSession}
         onToggleConfig={onToggleConfig}
+        onDeleteSession={onDeleteSession}
       />
 
       {/* 主聊天区 */}

@@ -45,9 +45,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             加载历史消息...
           </div>
         ) : messages.length === 0 ? (
-          <EmptyState hasSession={hasSession} onCreateSession={onCreateSession} onSend={onSend} />
+          <EmptyState
+            hasSession={hasSession}
+            onCreateSession={onCreateSession}
+            onSend={onSend}
+            disabled={!connected}
+          />
         ) : (
-          <MessageList messages={messages} />
+          <MessageList messages={messages} working={streaming} />
         )}
       </div>
 

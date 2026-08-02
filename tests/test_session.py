@@ -124,6 +124,12 @@ class TestSerialization:
         assert isinstance(msg, dict)
         assert msg["role"] == "user"
 
+    def test_deserialize_todo_returns_none(self):
+        """__todo__ 记录反序列化为 None（非对话消息，不应被加载为消息）"""
+        record = {"type": "__todo__", "todos": [], "todo_counter": 0}
+        msg = deserialize_message(record)
+        assert msg is None
+
     def test_roundtrip_mixed_messages(self, temp_sessions_dir):
         """混合消息类型保存-加载往返测试"""
         messages = [
@@ -263,6 +269,19 @@ class TestTodoPersistence:
 
         info = get_session_info("count_test")
         assert info["message_count"] == 2  # 不包括 __todo__ 行
+
+    def test_load_skips_todo_and_empty_human(self, temp_sessions_dir):
+        """加载时跳过 __todo__ 记录与历史遗留的空用户消息，避免产生空气泡"""
+        save_session_messages("legacy", [
+            {"role": "user", "content": "真实问题"},
+            {"type": "human", "role": "user", "content": ""},  # 历史遗留空记录
+        ])
+        save_session_todos("legacy", [{"id": 1, "title": "t"}], 1)
+
+        loaded = load_session_messages("legacy")
+        assert loaded is not None
+        assert len(loaded) == 1
+        assert loaded[0]["content"] == "真实问题"
 
 
 # ═══════════════════════════════════════════════════════════
