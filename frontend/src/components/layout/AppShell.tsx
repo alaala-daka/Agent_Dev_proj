@@ -11,6 +11,7 @@ interface AppShellProps {
   configPanelOpen: boolean;
   onToggleConfig: () => void;
   onConfigPanelClose: () => void;
+  refreshKey?: number;
 }
 
 export const AppShell: React.FC<AppShellProps> = ({
@@ -22,6 +23,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   configPanelOpen,
   onToggleConfig,
   onConfigPanelClose,
+  refreshKey,
 }) => {
   return (
     <div className="h-screen flex overflow-hidden">
@@ -32,6 +34,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         onNewSession={onNewSession}
         onToggleConfig={onToggleConfig}
         onDeleteSession={onDeleteSession}
+        refreshKey={refreshKey}
       />
 
       {/* 主聊天区 */}

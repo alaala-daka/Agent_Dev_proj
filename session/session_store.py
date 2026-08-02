@@ -194,9 +194,14 @@ def list_sessions() -> list[dict]:
             filepath = os.path.join(sessions_dir, fname)
             try:
                 stat = os.stat(filepath)
+                user_count, first_user_text = _scan_user_stats(filepath)
+                stored_title = load_session_title(sid)
                 sessions.append({
                     "session_id": sid,
+                    # 存储标题优先；无存储标题时回退为第一条用户消息的截断
+                    "title": stored_title if stored_title else (truncate_title(first_user_text) if first_user_text else ""),
                     "message_count": _count_jsonl_lines(filepath),
+                    "user_message_count": user_count,
                     "created_at": _format_timestamp(stat.st_ctime),
                     "updated_at": _format_timestamp(stat.st_mtime),
                     "size_bytes": stat.st_size,
@@ -210,10 +215,13 @@ def list_sessions() -> list[dict]:
 
 
 def delete_session(session_id: str) -> bool:
-    """删除指定会话文件。返回是否成功删除"""
+    """删除指定会话文件及其标题 sidecar。返回是否成功删除"""
     filepath = _get_session_path(session_id)
     if os.path.exists(filepath):
         os.remove(filepath)
+        meta_path = _get_meta_path(session_id)
+        if os.path.exists(meta_path):
+            os.remove(meta_path)
         logger.info(f"[session] 已删除会话 '{_sanitize_session_id(session_id)}'")
         return True
     return False
@@ -227,9 +235,13 @@ def get_session_info(session_id: str) -> dict | None:
 
     try:
         stat = os.stat(filepath)
+        user_count, first_user_text = _scan_user_stats(filepath)
+        stored_title = load_session_title(session_id)
         return {
             "session_id": _sanitize_session_id(session_id),
+            "title": stored_title if stored_title else (truncate_title(first_user_text) if first_user_text else ""),
             "message_count": _count_jsonl_lines(filepath),
+            "user_message_count": user_count,
             "created_at": _format_timestamp(stat.st_ctime),
             "updated_at": _format_timestamp(stat.st_mtime),
             "size_bytes": stat.st_size,
@@ -324,6 +336,85 @@ def _count_jsonl_lines(filepath: str) -> int:
         return count
     except Exception:
         return 0
+
+
+def _scan_user_stats(filepath: str) -> tuple[int, str]:
+    """单遍扫描会话文件，返回 (用户消息数, 第一条非空用户消息原文)。
+
+    用户消息数只统计 content 非空的 human 记录（历史遗留的空用户记录不计入）。
+    first_user_text 不做截断，由调用方决定；坏行跳过，异常返回 (0, "")。
+    """
+    def _content_text(content) -> str:
+        """将 content 归一化为纯文本（兼容字符串 / content block 列表）"""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict):
+                    parts.append(str(block.get("text", "")))
+            return "".join(parts)
+        return str(content)
+
+    user_count = 0
+    first_user_text = ""
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line.strip())
+                except json.JSONDecodeError:
+                    continue
+                if record.get("type") != "human":
+                    continue
+                text = _content_text(record.get("content", "")).strip()
+                if not text:
+                    continue
+                user_count += 1
+                if not first_user_text:
+                    first_user_text = text
+    except Exception:
+        return (0, "")
+    return (user_count, first_user_text)
+
+
+def _get_meta_path(session_id: str) -> str:
+    """获取会话标题 sidecar 文件的绝对路径"""
+    sid = _sanitize_session_id(session_id)
+    return os.path.join(_get_session_dir(), f"{sid}.meta.json")
+
+
+def load_session_title(session_id: str) -> str:
+    """读取会话标题；文件缺失/损坏时返回空字符串，绝不抛异常"""
+    meta_path = _get_meta_path(session_id)
+    try:
+        with open(meta_path, "r", encoding=System_Config.get("encoding", "utf-8")) as f:
+            record = json.load(f)
+            title = record.get("title", "")
+            return title if isinstance(title, str) else ""
+    except (OSError, ValueError):
+        return ""
+
+
+def save_session_title(session_id: str, title: str) -> None:
+    """将会话标题写入 sidecar 文件（与消息 JSONL 解耦，不受整文件覆写影响）"""
+    meta_path = _get_meta_path(session_id)
+    with open(meta_path, "w", encoding=System_Config.get("encoding", "utf-8")) as f:
+        json.dump({"title": title}, f, ensure_ascii=False)
+
+
+def truncate_title(text: str, max_len: int = 20) -> str:
+    """将文本压平空白并截断为不超过 max_len 字符的标题；空输入返回 ''"""
+    if not text:
+        return ""
+    flat = " ".join(text.split())
+    if not flat:
+        return ""
+    return flat[:max_len]
 
 
 def _format_timestamp(ts: float) -> str:

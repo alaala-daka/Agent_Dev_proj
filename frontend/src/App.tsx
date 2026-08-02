@@ -43,6 +43,7 @@ export default function App() {
   const [streaming, setStreaming] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [sessionListKey, setSessionListKey] = useState(0);
   const nextSessionIdRef = useRef<string>('');
 
   const handleMessage = useCallback((msg: DisplayMessage) => {
@@ -61,6 +62,9 @@ export default function App() {
     setStreaming(s);
   }, []);
 
+  // 一轮对话结束后通知侧栏刷新（标题/消息数已更新）
+  const handleTurnEnd = useCallback(() => setSessionListKey(k => k + 1), []);
+
   const {
     send, cancel, answerUser, connected,
     askUser, dismissAskUser,
@@ -68,6 +72,7 @@ export default function App() {
     sessionId,
     onMessage: handleMessage,
     onStreamingChange: handleStreamingChange,
+    onTurnEnd: handleTurnEnd,
   });
 
   const handleCreateSession = useCallback(async () => {
@@ -118,6 +123,7 @@ export default function App() {
       configPanelOpen={configOpen}
       onToggleConfig={() => setConfigOpen(!configOpen)}
       onConfigPanelClose={() => setConfigOpen(false)}
+      refreshKey={sessionListKey}
     >
       <ChatArea
         messages={messages}

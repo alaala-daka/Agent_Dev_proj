@@ -16,6 +16,7 @@ from session.session_store import (
     save_session_messages, load_session_messages,
     list_sessions, delete_session, get_session_info, session_exists,
     save_session_todos, load_session_todos,
+    save_session_title, load_session_title, truncate_title,
     _sanitize_session_id
 )
 from tool.config_handler import Session_Config, System_Config
@@ -230,6 +231,70 @@ class TestSessionStore:
         loaded = load_session_messages("empty_session")
         assert loaded == []
 
+    def test_user_message_count_counts_nonempty_human_only(self, temp_sessions_dir):
+        """user_message_count 只统计内容非空的用户消息；message_count 仍为原始记录数"""
+        save_session_messages("user_count", [
+            {"role": "user", "content": "q1"},
+            {"type": "human", "role": "user", "content": ""},  # 历史遗留空记录，不计入
+            AIMessage(content="这是回复"),
+            {"role": "user", "content": "q2"},
+        ])
+        info = get_session_info("user_count")
+        assert info["message_count"] == 4
+        assert info["user_message_count"] == 2
+
+    def test_list_sessions_title_fallback_truncated(self, temp_sessions_dir):
+        """无存储标题时，title 回退为第一条用户消息的截断（且不含哈希）"""
+        first = "帮我写一个Python爬虫脚本抓取网页数据并输出到Excel文件"
+        save_session_messages("fallback_sess", [{"role": "user", "content": first}])
+        sessions = list_sessions()
+        entry = next(s for s in sessions if s["session_id"] == "fallback_sess")
+        assert entry["title"] == truncate_title(first)
+        assert entry["user_message_count"] == 1
+        assert all(ch not in entry["title"] for ch in "fallback_sess")
+
+    def test_title_uses_stored_title_over_truncation(self, temp_sessions_dir):
+        """存储标题优先于截断回退"""
+        save_session_messages("titled", [{"role": "user", "content": "很长的一条消息" * 10}])
+        save_session_title("titled", "已存标题")
+        info = get_session_info("titled")
+        assert info["title"] == "已存标题"
+        sessions = list_sessions()
+        entry = next(s for s in sessions if s["session_id"] == "titled")
+        assert entry["title"] == "已存标题"
+
+    def test_title_empty_for_empty_session(self, temp_sessions_dir):
+        """空会话（无用户消息）title 为 ''"""
+        save_session_messages("empty_title", [])
+        info = get_session_info("empty_title")
+        assert info["title"] == ""
+
+    def test_save_and_load_title_roundtrip(self, temp_sessions_dir):
+        """标题 sidecar 保存/加载往返；缺失返回空字符串"""
+        assert load_session_title("missing_meta") == ""
+        save_session_title("meta_sess", "Python 爬虫")
+        assert load_session_title("meta_sess") == "Python 爬虫"
+
+    def test_truncate_title(self):
+        """truncate_title 截断、压平空白、空输入返回 ''"""
+        assert truncate_title("中" * 25) == "中" * 20
+        assert truncate_title("多  个空格\n换行") == "多 个空格 换行"
+        assert truncate_title("") == ""
+        assert truncate_title("   \n ") == ""
+
+    def test_meta_sidecar_not_listed_as_session(self, temp_sessions_dir):
+        """只有 sidecar 文件不构成会话"""
+        save_session_title("orphan_meta", "孤立标题")
+        ids = [s["session_id"] for s in list_sessions()]
+        assert "orphan_meta" not in ids
+
+    def test_delete_session_removes_meta_sidecar(self, temp_sessions_dir):
+        """删除会话同时清理标题 sidecar"""
+        save_session_messages("del_meta", [{"role": "user", "content": "x"}])
+        save_session_title("del_meta", "要删的标题")
+        assert delete_session("del_meta")
+        assert load_session_title("del_meta") == ""
+
 
 # ═══════════════════════════════════════════════════════════
 #  Todo 状态持久化测试
@@ -356,3 +421,57 @@ class TestSessionTool:
         """空命令返回帮助"""
         result = self._sess("")
         assert "会话" in result
+
+
+# ═══════════════════════════════════════════════════════════
+#  会话标题生成测试（不发起真实 LLM 调用）
+# ═══════════════════════════════════════════════════════════
+
+class _FailingModel:
+    """模拟 LLM 故障的假模型"""
+    def invoke(self, *args, **kwargs):
+        raise RuntimeError("模拟 LLM 故障")
+
+
+class _FakeGraph:
+    """模拟 langchain graph：stream() 产出 messages 快照"""
+    def __init__(self, messages):
+        self._messages = messages
+
+    def stream(self, messages, stream_mode="values"):
+        yield {"messages": self._messages}
+
+
+class TestAgentTitle:
+    """会话标题生成与持久化测试"""
+
+    @pytest.fixture(autouse=True)
+    def setup_agent(self, temp_sessions_dir, monkeypatch):
+        """创建 Agent 实例，并用故障模型替代 chatmodel（不发真实请求）"""
+        from Agent import Agent
+        monkeypatch.setattr("Agent.chatmodel", _FailingModel())
+        self.agent = Agent()
+        if not self.agent.session_id:
+            self.agent.new_session("title_test")
+
+    def test_ensure_session_title_falls_back_to_truncation(self):
+        """LLM 失败时回退为截断标题，且重复调用不改变已存标题"""
+        self.agent.messages = [{"role": "user", "content": "帮我写一个Python爬虫脚本抓取网页数据"}]
+        self.agent._ensure_session_title()
+        title = load_session_title(self.agent.session_id)
+        assert title == truncate_title("帮我写一个Python爬虫脚本抓取网页数据")
+        assert len(title) <= 20
+        # 幂等：再次调用不改变标题
+        self.agent._ensure_session_title()
+        assert load_session_title(self.agent.session_id) == title
+
+    def test_stream_generates_title_on_first_turn(self):
+        """stream() 首轮对话完成后生成并持久化标题"""
+        first_msg = "帮我写爬虫"
+        self.agent.agent = _FakeGraph([
+            HumanMessage(content=first_msg),
+            AIMessage(content="好的，我来帮你。"),
+        ])
+        outputs = list(self.agent.stream(first_msg))
+        assert outputs  # 有产出
+        assert load_session_title(self.agent.session_id) == truncate_title(first_msg)

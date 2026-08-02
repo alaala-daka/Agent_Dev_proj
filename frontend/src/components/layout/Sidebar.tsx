@@ -9,6 +9,7 @@ interface SidebarProps {
   onNewSession: () => void;
   onToggleConfig: () => void;
   onDeleteSession: (id: string) => void;
+  refreshKey?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -17,20 +18,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNewSession,
   onToggleConfig,
   onDeleteSession,
+  refreshKey,
 }) => {
   const { sessions, loading, refresh, deleteSession } = useSessions();
   const [search, setSearch] = useState('');
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // 当 sessionId 更改或创建新会话时刷新列表
+  // 当 sessionId 更改、创建新会话或一轮对话结束时刷新列表
   useEffect(() => {
     refresh();
-  }, [currentSessionId, refresh]);
+  }, [currentSessionId, refresh, refreshKey]);
 
-  const filtered = sessions.filter((s: Session) =>
-    s.session_id.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = sessions.filter((s: Session) => {
+    const q = search.toLowerCase();
+    return (
+      s.session_id.toLowerCase().includes(q) ||
+      (s.title || '').toLowerCase().includes(q)
+    );
+  });
 
   const handleDelete = async (id: string) => {
     if (deleting) return;
@@ -101,10 +107,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               } />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-[#1D1D1F] truncate font-sidebar">
-                  {s.session_id.slice(0, 12)}
+                  {s.title || '新会话'}
                 </div>
                 <div className="text-[11px] text-[#AEAEB2] font-sidebar">
-                  {s.message_count} 条消息{s.created_at ? ` · ${s.created_at.slice(5, 16)}` : ''}
+                  {(s.user_message_count ?? s.message_count) * 2} 条消息
+                  {s.created_at ? ` · ${s.created_at.slice(5, 16)}` : ''}
+                  {s.session_id ? ` · ${s.session_id}` : ''}
                 </div>
               </div>
               {confirmingId === s.session_id ? (

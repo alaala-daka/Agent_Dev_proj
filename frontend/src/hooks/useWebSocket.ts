@@ -5,6 +5,7 @@ interface UseWebSocketOptions {
   sessionId: string;
   onMessage: (msg: DisplayMessage) => void;
   onStreamingChange: (streaming: boolean) => void;
+  onTurnEnd?: () => void;
 }
 
 interface UseWebSocketReturn {
@@ -16,7 +17,7 @@ interface UseWebSocketReturn {
   dismissAskUser: () => void;
 }
 
-export function useWebSocket({ sessionId, onMessage, onStreamingChange }: UseWebSocketOptions): UseWebSocketReturn {
+export function useWebSocket({ sessionId, onMessage, onStreamingChange, onTurnEnd }: UseWebSocketOptions): UseWebSocketReturn {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout>>();
   const reconnectAttempt = useRef(0);
@@ -88,7 +89,7 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange }: UseWeb
       if (!mountedRef.current) return;
       reconnectTimeout.current = setTimeout(connect, 3000);
     }
-  }, [sessionId, onMessage, onStreamingChange]);
+  }, [sessionId, onMessage, onStreamingChange, onTurnEnd]);
 
   const handleServerMessage = useCallback((msg: ServerMessage) => {
     switch (msg.type) {
@@ -115,6 +116,8 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange }: UseWeb
       case 'done':
         flushPending();
         onStreamingChange(false);
+        // 一轮对话结束（服务端已保存会话并生成标题），通知侧栏刷新
+        onTurnEnd?.();
         break;
 
       case 'interrupted':
@@ -137,7 +140,7 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange }: UseWeb
         // 服务端发送的会话元数据，仅记录
         break;
     }
-  }, [onMessage, onStreamingChange]);
+  }, [onMessage, onStreamingChange, onTurnEnd]);
 
   function appendToPending(content: string, streaming: boolean) {
     if (!content || !content.trim()) return; // 空 chunk 不创建气泡

@@ -18,7 +18,9 @@ class CreateSessionRequest(BaseModel):
 
 class SessionInfo(BaseModel):
     session_id: str
+    title: str = ""              # 会话标题（存储标题，或首条用户消息截断，空会话为 ""）
     message_count: int
+    user_message_count: int = 0  # 仅统计内容非空的用户消息
     created_at: str | None = None
     updated_at: str | None = None
     size_bytes: int | None = None

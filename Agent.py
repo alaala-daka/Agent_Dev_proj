@@ -8,7 +8,8 @@ from agent_tools.session_tool import session as session_tool, set_current_agent
 from session.session_store import (
     save_session_messages, load_session_messages,
     list_sessions, delete_session, get_session_info, session_exists,
-    save_session_todos, load_session_todos
+    save_session_todos, load_session_todos,
+    save_session_title, load_session_title, truncate_title
 )
 from tool.prompt_loader import system_prompt_load
 from tool.config_handler import FileManage_Config, Session_Config
@@ -78,6 +79,28 @@ def _sanitize_history(messages: list) -> list:
     return out
 
 
+_TITLE_PROMPT = (
+    "你是会话标题生成助手。请根据用户的第一条消息，生成一个不超过20个字符的会话主题标题。\n"
+    "要求：只输出标题本身；中文为主（除非消息本身是英文）；"
+    "不要引号、标点、解释或多余文字；长度严格不超过20个字符。\n"
+    "用户消息：{message}"
+)
+
+
+def _generate_title(first_message_text: str) -> str:
+    """用 DeepSeek chatmodel 生成 ≤20 字符会话标题；失败/空结果时回退截断"""
+    try:
+        resp = chatmodel.invoke(_TITLE_PROMPT.format(message=first_message_text[:200]))
+        text = _content_to_text(getattr(resp, "content", ""))
+        text = text.strip().strip('"').strip("'").strip()
+        if not text:
+            return truncate_title(first_message_text)
+        return truncate_title(text)  # 防御性截断：LLM 输出超长也被限制到 20 字符
+    except Exception:
+        logger.warning("[Agent] 标题生成失败，回退到截断标题")
+        return truncate_title(first_message_text)
+
+
 class Agent():
     def __init__(self, session_id: str | None = None) -> None:
         # ── 会话管理初始化 ──
@@ -139,6 +162,7 @@ class Agent():
         # 每轮对话结束后自动保存（如果会话活跃）
         if self.session_id and Session_Config.get("auto_save", True):
             self._save_session_state()
+            self._ensure_session_title()
 
     # ── 会话状态管理 ──
 
@@ -152,6 +176,8 @@ class Agent():
             todos_state = load_session_todos(session_id)
             if todos_state:
                 restore_todo_state(*todos_state)
+            # 遗留会话（有消息但无存储标题）打开时补齐标题
+            self._ensure_session_title()
             logger.info(f"[Agent] 已加载会话 [{session_id}]：{len(self.messages)} 条消息")
         else:
             self.session_id = session_id
@@ -166,6 +192,40 @@ class Agent():
         todos, counter = get_todo_state()
         save_session_todos(self.session_id, todos, counter)
         logger.debug(f"[Agent] 已保存会话 [{self.session_id}]：{len(self.messages)} 条消息")
+
+    def _first_user_message_text(self) -> str:
+        """返回 messages 中第一条非空用户消息文本；无则返回 ''"""
+        for msg in self.messages:
+            if isinstance(msg, dict):
+                if msg.get("role") != "user":
+                    continue
+                content = msg.get("content", "")
+            elif isinstance(msg, HumanMessage):
+                content = msg.content
+            else:
+                continue
+            text = _content_to_text(content).strip()
+            if text:
+                return text
+        return ""
+
+    def _ensure_session_title(self) -> None:
+        """首次对话后 / 打开遗留会话时，生成并持久化会话标题（仅一次）。
+
+        已存在标题、无 session_id、无用户消息 → no-op。
+        LLM 失败自动回退为第一条用户消息的截断，绝不把 hash 当标题。
+        """
+        if not self.session_id:
+            return
+        if load_session_title(self.session_id):
+            return
+        first_text = self._first_user_message_text()
+        if not first_text:
+            return
+        title = _generate_title(first_text)
+        if title:
+            save_session_title(self.session_id, title)
+            logger.info(f"[Agent] 已生成会话标题 [{self.session_id}]: {title}")
 
     # ── 会话操作接口（供 session_tool 和 REPL 调用）──
 
