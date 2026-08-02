@@ -41,6 +41,9 @@ if __name__=='__main__':
     while True:
         user_mess=input("User_input: ").strip()
 
+        if not user_mess:
+            continue  # 跳过空输入，避免产生空 HumanMessage
+
         if user_mess.lower() in ('quit', 'exit', 'q'):
             break
 
