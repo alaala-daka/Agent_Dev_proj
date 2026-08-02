@@ -58,7 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-4 border-b border-[#E5E5EA]">
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-base font-semibold text-[#1D1D1F] font-sidebar tracking-tight">
-            Agent_Dev
+            Dadu Agent
           </h1>
           <button
             onClick={onNewSession}
