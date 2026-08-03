@@ -60,7 +60,7 @@ Dadu Agent is a full-stack AI agent framework built on **LangChain + LangGraph**
 
 ### 📚 有性格的 RAG 知识库
 
-拖拽 `.txt` / `.pdf` 到设置面板即可入库：先由 LLM 按语义边界切分（以 `|` 为界，绝不断在词语或从句中间），再递归细分、MD5 去重后写入 Chroma；大文件走懒加载批处理，不爆内存。检索摘要遵循固定四段式结构——**核心结论 → 关键信息点 → 矛盾与存疑 → 信息缺口**，并禁用"可能/大概/或许"等含糊词。用提示词原文的话说：
+拖拽 `.txt` / `.md` / `.docx` / 代码文件等（扩展名列表见 `config/RagConfig.yml` 的 `support_extensions`）到设置面板即可入库：先由 LLM 按语义边界切分（以 `|` 为界，绝不断在词语或从句中间），再递归细分、MD5 去重后写入 Chroma；大文件走懒加载批处理，不爆内存。检索摘要遵循固定四段式结构——**核心结论 → 关键信息点 → 矛盾与存疑 → 信息缺口**，并禁用"可能/大概/或许"等含糊词。用提示词原文的话说：
 
 > 凡下断言，必溯其源；凡遇矛盾，必列双方；凡存缺口，必以明告。
 
@@ -158,7 +158,7 @@ cd frontend && npm install && npm run build && cd ..
 uv run python server.py
 ```
 
-**上传知识库**：在设置面板直接拖拽 `.txt` / `.pdf` 文件，或使用命令行：
+**上传知识库**：在设置面板直接拖拽 `.txt` / `.md` / `.docx` / 代码文件（支持格式由 `support_extensions` 配置决定），或使用命令行：
 
 ```bash
 uv run python file_upload_service.py
@@ -181,7 +181,7 @@ uv run python file_upload_service.py
 
 <img src="readme_photos/tool_setting.png" width="400" alt="设置面板与 RAG 知识库">
 
-> 设置面板：模型设置、工具管理、文件管理、系统提示词自定义；RAG 知识库支持拖拽上传 `.txt` / `.pdf`，自动分块索引。
+> 设置面板：模型设置、工具管理、文件管理、系统提示词自定义；RAG 知识库支持拖拽上传 `.txt` / `.md` / `.docx` / 代码文件（支持格式可在 `RagConfig.yml` 的 `support_extensions` 配置），自动分块索引。
 
 ## 🧪 测试
 
@@ -207,7 +207,7 @@ uv run pytest tests/ -v
 - [ ] 报告生成能力（`report_prompt` 已预留）
 - [ ] 前端国际化（`UIConfig` 已预留语言项）
 - [x] 接入任意 OpenAI 协议模型（设置面板 → 模型设置 → 添加模型，一个 active 模型驱动对话与 RAG 全链路）
-- [ ] 知识库支持更多文件格式（docx / markdown / 代码文件）
+- [x] 知识库支持更多文件格式（docx / markdown / 代码文件）
 - [ ] 反思笔记的 Web 端可视化面板增强
 
 ---
