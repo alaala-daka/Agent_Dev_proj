@@ -7,6 +7,7 @@ import datetime
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 from tool.config_handler import Rag_Config, get_abs_path
+from tool.file_handler import get_supported_extensions
 from tool.logger_handler import logger
 from vector_uploader_service.file_record import list_all_files, get_all_records, remove_records_by_file
 
@@ -44,8 +45,8 @@ async def api_list_rag_files():
 @router.post("/files/upload")
 async def api_upload_file(file: UploadFile = File(...)):
     """上传文件到 RAG 知识库"""
-    # 验证文件类型
-    allowed_exts = (".txt", ".pdf")
+    # 验证文件类型（从 Rag_Config.support_extensions 派生）
+    allowed_exts = tuple(get_supported_extensions())
     if not file.filename or not file.filename.lower().endswith(allowed_exts):
         raise HTTPException(
             status_code=400,
@@ -117,4 +118,5 @@ async def api_rag_status():
         "total_chunks": total_chunks,
         "vector_count": vector_count,
         "collection_name": Rag_Config.get("collection_name", "knowledge_base"),
+        "supported_extensions": get_supported_extensions(),
     }

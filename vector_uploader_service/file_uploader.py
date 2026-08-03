@@ -9,7 +9,13 @@ from factory.model_generator import create_ragmodel
 from tool.path_tool import get_abs_path
 from vector_uploader_service.md5_tools import md5_file_check,md5_loader,md5_trans
 from vector_uploader_service.file_record import record_file
-from tool.file_handler import textloader,pdfloader,listdir_readable_file
+from tool.file_handler import (
+    pdfloader,
+    docxloader,
+    load_document,
+    is_supported_extension,
+    get_supported_extensions,
+)
 from tool.logger_handler import logger
 from langchain_core.prompts import SystemMessagePromptTemplate,ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -52,21 +58,13 @@ class File_Uploader():
         上传本地文件至向量数据库
         """
 
-        docs=[]
-        upload_content=''
-        if abs_path.endswith('txt'):
-            docs=textloader(abs_path)
-            if docs:
-                upload_content=docs[0].page_content
-            else: 
-                logger.error("未能读取.txt文件内容")
-                return
-        elif abs_path.endswith('pdf'):
-            docs=pdfloader(abs_path)
-            if docs:
-                upload_content='\n'.join(doc.page_content for doc in docs)
+        docs=load_document(abs_path)
         if not docs:
-            logger.error("[file_upload]所提供链接无可识别上传文件，文件应为pdf或txt，或者提供链接无效")
+            logger.error("[file_upload] 无法读取文件内容或文件类型不支持")
+            return
+        upload_content='\n'.join(doc.page_content for doc in docs if doc.page_content)
+        if not upload_content.strip():
+            logger.error("[file_upload] 文件内容为空")
             return
         md5_val=md5_trans(upload_content)
         if md5_file_check(md5_val):
@@ -82,7 +80,7 @@ class File_Uploader():
         record_file(abs_path,chroma_ids,Chroma_Config['collection_name'])
     def dir_upload(self,abs_path:str):
         """
-        批量上传目录中的 .txt 和 .pdf 至向量数据库。
+        批量上传目录中支持的文件（扩展名由 Rag_Config.support_extensions 决定）至向量数据库。
         大文件采用生成器懒加载，分批送入 LLM，设计贴合 file_upload 模式。
         """
         if not os.path.isdir(abs_path):
@@ -92,11 +90,12 @@ class File_Uploader():
         readable_files=[
             os.path.join(abs_path,f)
             for f in os.listdir(abs_path)
-            if f.endswith(('.txt','.pdf'))
+            if is_supported_extension(os.path.join(abs_path, f))
         ]
 
         if not readable_files:
-            logger.warning(f"[dir_upload] {abs_path} 无可读 .txt/.pdf 文件")
+            supported=', '.join(get_supported_extensions())
+            logger.warning(f"[dir_upload] {abs_path} 无可读文件（支持: {supported}）")
             return
 
         logger.info(f"[dir_upload] 发现 {len(readable_files)} 个文件待处理")
@@ -120,10 +119,14 @@ class File_Uploader():
         timestamp=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # --- 1. 选择对应的懒加载生成器 ---
-        if abs_path.endswith('.txt'):
-            batches=self._iter_txt_batches(abs_path,txt_chars_per_batch)
-        elif abs_path.endswith('.pdf'):
+        ext=os.path.splitext(abs_path)[1].lower()
+        if ext == '.pdf':
             batches=self._iter_pdf_batches(abs_path,pdf_pages_per_batch)
+        elif ext == '.docx':
+            batches=self._iter_docx_batches(abs_path,txt_chars_per_batch)
+        elif is_supported_extension(abs_path):
+            # txt / md / markdown / 代码文件，逐行懒加载
+            batches=self._iter_txt_batches(abs_path,txt_chars_per_batch)
         else:
             logger.warning(f"[_batch_upload] 跳过不支持类型: {file_name}")
             return 0
@@ -195,6 +198,21 @@ class File_Uploader():
                 batch=[]
         if batch:
             yield "\n".join(batch)
+
+    def _iter_docx_batches(self,abs_path:str,chars_per_batch:int):
+        """
+        生成器：DOCX 无法逐行读取，整篇加载后按字符数切片分批。
+        docx2txt 一次性返回整篇文本，与 PDF 路径采用同一内存量级。
+        """
+        docs=docxloader(abs_path)
+        if not docs:
+            return
+
+        content="\n".join(doc.page_content for doc in docs if doc.page_content)
+        for i in range(0,len(content),chars_per_batch):
+            batch=content[i:i+chars_per_batch]
+            if batch.strip():
+                yield batch
 
     def get_retriever(self):
         #提供快速入链的功能

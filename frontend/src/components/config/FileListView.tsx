@@ -16,7 +16,7 @@ export const FileListView: React.FC<{
     return (
       <div className="text-center py-6 text-[#AEAEB2] text-sm font-sidebar">
         <FileText size={24} className="mx-auto mb-2 opacity-40" />
-        知识库为空 — 拖拽 .txt 或 .pdf 文件到此处上传
+        知识库为空 — 拖拽文件到此处上传
       </div>
     );
   }

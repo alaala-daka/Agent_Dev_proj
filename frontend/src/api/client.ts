@@ -56,7 +56,8 @@ export const apiClient = {
 
   // ── Files / RAG ──
   listRagFiles: () => request<{ files: unknown[]; total: number }>('/files/rag-files'),
-  getRagStatus: () => request<{ file_count: number; total_chunks: number; vector_count: number }>('/files/rag-status'),
+  getRagStatus: () =>
+    request<{ file_count: number; total_chunks: number; vector_count: number; supported_extensions: string[] }>('/files/rag-status'),
   deleteRagFile: (name: string) =>
     request<{ deleted: string }>(`/files/rag-files/${encodeURIComponent(name)}`, { method: 'DELETE' }),
 

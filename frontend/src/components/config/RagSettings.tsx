@@ -5,7 +5,7 @@ import { FileDropZone } from './FileDropZone';
 import { Spinner } from '../shared/Spinner';
 
 export const RagSettings: React.FC = () => {
-  const { files, status, loading, refresh, deleteFile } = useRagFiles();
+  const { files, status, loading, refresh, deleteFile, supportedExtensions } = useRagFiles();
   const [uploading, setUploading] = useState(false);
 
   const handleUpload = useCallback(async (file: File) => {
@@ -52,7 +52,7 @@ export const RagSettings: React.FC = () => {
       <FileListView files={files} onDelete={deleteFile} />
 
       {/* 上传区 */}
-      <FileDropZone onUpload={handleUpload} uploading={uploading} />
+      <FileDropZone onUpload={handleUpload} uploading={uploading} supportedExtensions={supportedExtensions} />
     </div>
   );
 };

@@ -12,6 +12,7 @@ interface RagStatus {
   file_count: number;
   total_chunks: number;
   vector_count: number;
+  supported_extensions: string[];
 }
 
 export function useRagFiles() {
@@ -43,5 +44,7 @@ export function useRagFiles() {
     refresh();
   }, [refresh]);
 
-  return { files, status, loading, refresh, deleteFile };
+  const supportedExtensions = status?.supported_extensions ?? ['.txt', '.pdf'];
+
+  return { files, status, loading, refresh, deleteFile, supportedExtensions };
 }

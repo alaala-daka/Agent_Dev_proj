@@ -4,7 +4,8 @@ import { Upload, Loader2 } from 'lucide-react';
 export const FileDropZone: React.FC<{
   onUpload: (file: File) => Promise<void>;
   uploading: boolean;
-}> = ({ onUpload, uploading }) => {
+  supportedExtensions?: string[];
+}> = ({ onUpload, uploading, supportedExtensions = ['.txt', '.pdf'] }) => {
   const [dragOver, setDragOver] = useState(false);
 
   const handleDrop = useCallback((e: DragEvent) => {
@@ -12,14 +13,15 @@ export const FileDropZone: React.FC<{
     setDragOver(false);
     const file = e.dataTransfer.files[0];
     if (file) {
-      const ext = file.name.toLowerCase();
-      if (ext.endsWith('.txt') || ext.endsWith('.pdf')) {
+      const name = file.name.toLowerCase();
+      const ok = supportedExtensions.some((ext) => name.endsWith(ext));
+      if (ok) {
         onUpload(file);
       } else {
-        alert('仅支持 .txt 和 .pdf 文件');
+        alert(`仅支持 ${supportedExtensions.join(' / ')} 文件`);
       }
     }
-  }, [onUpload]);
+  }, [onUpload, supportedExtensions]);
 
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
@@ -44,7 +46,7 @@ export const FileDropZone: React.FC<{
         <>
           <Upload size={20} className="text-[#AEAEB2]" />
           <span className="text-xs text-[#AEAEB2] font-sidebar">
-            拖拽 .txt / .pdf 文件到此处
+            拖拽 {supportedExtensions.join(' / ')} 文件到此处
           </span>
         </>
       )}
