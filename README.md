@@ -10,12 +10,12 @@
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9)
 
-Dadu Agent 是一个基于 **LangChain + LangGraph** 构建的全栈 AI 智能体项目：以 DeepSeek 为对话模型、Chroma 为向量库、DashScope 为嵌入模型，内置 **7 个工具、2 个中间件、完整的 RAG 管线和双模式文件管理安全体系**。它既可以在终端里作为会话式 REPL 使用，也附带一个 React 实时聊天界面——支持 WebSocket 流式输出、工具调用可视化和浏览器内的"Agent 向你提问"交互。
+Dadu Agent 是一个基于 **LangChain + LangGraph** 构建的全栈 AI 智能体项目：对话模型即插即用（默认 DeepSeek，可接入任意符合 OpenAI 协议的 LLM）、Chroma 为向量库、DashScope 为嵌入模型，内置 **7 个工具、2 个中间件、完整的 RAG 管线和双模式文件管理安全体系**。它既可以在终端里作为会话式 REPL 使用，也附带一个 React 实时聊天界面——支持 WebSocket 流式输出、工具调用可视化和浏览器内的"Agent 向你提问"交互。
 
 <details>
 <summary>🇬🇧 English Introduction</summary>
 
-Dadu Agent is a full-stack AI agent framework built on **LangChain + LangGraph**, powered by DeepSeek (chat), Chroma (vector store) and DashScope (embeddings). It ships with **7 tools, 2 middleware hooks, a complete RAG pipeline, and a dual-mode (manual/auto) file-management safety system**. Use it as a session-aware terminal REPL, or through the bundled React chat UI with WebSocket streaming, visualized tool calls, and in-browser "agent asks you" clarification dialogs. Highlights: a Chroma-backed reflection notebook with severity tagging and semantic search, a 95%-confidence clarification tool, LLM-based semantic text splitting with MD5 dedup, persistent sessions with auto-generated Chinese titles, and a settings panel with drag-and-drop knowledge-base upload. Python ≥ 3.13, managed with `uv`.
+Dadu Agent is a full-stack AI agent framework built on **LangChain + LangGraph**, powered by a pluggable chat model (DeepSeek by default, or any OpenAI-protocol-compatible LLM you configure in the settings panel), Chroma (vector store) and DashScope (embeddings). It ships with **7 tools, 2 middleware hooks, a complete RAG pipeline, and a dual-mode (manual/auto) file-management safety system**. Use it as a session-aware terminal REPL, or through the bundled React chat UI with WebSocket streaming, visualized tool calls, and in-browser "agent asks you" clarification dialogs. Highlights: a Chroma-backed reflection notebook with severity tagging and semantic search, a 95%-confidence clarification tool, LLM-based semantic text splitting with MD5 dedup, persistent sessions with auto-generated Chinese titles, and a settings panel with drag-and-drop knowledge-base upload. Python ≥ 3.13, managed with `uv`.
 
 </details>
 
@@ -64,6 +64,15 @@ Dadu Agent is a full-stack AI agent framework built on **LangChain + LangGraph**
 
 > 凡下断言，必溯其源；凡遇矛盾，必列双方；凡存缺口，必以明告。
 
+### 🧩 模型即插即用（任意 OpenAI 协议）
+
+对话底座不再绑定 DeepSeek。打开 **设置 → 模型设置 → 添加模型**，填入 **API 地址（base_url）、API Key、模型名**，即可接入任何符合 OpenAI 协议的大模型（OpenAI、Ollama、vLLM、各类中转网关……）。注册表支持多模型管理与一键切换：
+
+- 一个 **active 模型** 同时驱动全部环节——主对话、会话标题生成、RAG 检索总结、文件语义切分，配一个自定义模型即可用全功能，无需 DeepSeek Key；
+- `base_url` 留空则回退默认 DeepSeek（走 `DEEPSEEK_API_KEY` 环境变量），原有行为不变；
+- 密钥安全：模型列表只返回掩码 key（如 `sk-****test`），编辑时留空 = 保留原 key，`config/ModelConfig.yml` 已 gitignore；
+- 切换模型自动重建模型单例并清理会话缓存，新会话立即生效（已打开的对话刷新后生效）。
+
 ### 💬 会话持久化与自动标题
 
 每个会话以 JSONL 落盘，支持多会话创建/切换/删除；首轮对话后由模型自动生成 ≤20 字的中文标题（如"Python爬虫脚本编写"）。流式输出带历史清洗与失败回滚——上游模型报错时会自动恢复到最近一个可用快照，不产生半截对话。
@@ -96,7 +105,7 @@ graph TD
     SRV --> AG
     AG --> MW[中间件<br/>tool_monitor / task_reflection_trigger]
     AG --> TOOLS[7 个工具<br/>search · calculator · todo<br/>reflection · rag_summarize<br/>file_manage · ask_for_answer]
-    AG --> LLM[DeepSeek<br/>deepseek-v4-pro/flash]
+    AG --> LLM[对话模型<br/>默认 DeepSeek /<br/>任意 OpenAI 协议]
     TOOLS --> CHROMA[(Chroma<br/>knowledge_base<br/>agent_reflections)]
     TOOLS --> FS[文件系统<br/>安全管线]
     AG --> SESS[(sessions/<br/>JSONL 持久化)]
@@ -114,7 +123,7 @@ graph TD
 ├── frontend/                 # React 18 + TypeScript + Vite + Tailwind
 ├── prompt/                   # 系统 / RAG / 语义切分 / 报告 提示词
 ├── session/                  # 会话存储逻辑
-├── tests/                    # 111 个 pytest 测试
+├── tests/                    # 117 个 pytest 测试
 ├── tool/                     # 配置加载、日志（loguru）、路径、提示词加载
 └── vector_uploader_service/  # RAG 摄取（LLM 切分 + MD5 去重）与检索摘要
 ```
@@ -162,6 +171,7 @@ uv run python file_upload_service.py
 | 配置文件 | 关键旋钮 |
 |---|---|
 | `AgentConfig.yml` | 对话模型（默认 `deepseek-v4-pro`） |
+| `ModelConfig.yml` | 模型注册表：active 模型 + `models[]`（名称 / 地址 / 密钥 / 模型名），驱动对话与 RAG 全链路（含密钥，已 gitignore，有 `.example` 模板） |
 | `RagConfig.yml` | RAG 摘要模型、MD5 去重与上传记录路径 |
 | `ChromaConfig.yml` | 嵌入模型（`text-embedding-v4`）、集合名、持久化目录、切分符 |
 | `FileManageConfig.yml` | 文件管理模式（`manual` / `auto`）、黑名单、扩展名白名单、大小与深度限额 |
@@ -179,14 +189,14 @@ uv run python file_upload_service.py
 uv run pytest tests/ -v
 ```
 
-**111 个测试**覆盖：文件安全管线（路径穿越/黑名单/限额/审批流）、会话序列化与持久化、流式输出的历史清洗与反思触发。
+**117 个测试**覆盖：文件安全管线（路径穿越/黑名单/限额/审批流）、模型工厂（自定义 OpenAI 协议模型）、会话序列化与持久化、流式输出的历史清洗与反思触发。
 
 ## 🛠 技术栈
 
 | 层 | 技术 |
 |---|---|
 | Agent 框架 | LangChain 1.x · LangGraph |
-| 模型 | DeepSeek（对话/摘要）· DashScope text-embedding-v4（嵌入） |
+| 模型 | 默认 DeepSeek · 可插拔任意 OpenAI 协议模型（对话/摘要/切分） · DashScope text-embedding-v4（嵌入） |
 | 向量库 | Chroma（知识库 + 反思笔记双集合） |
 | 后端 | FastAPI · Uvicorn · WebSocket |
 | 前端 | React 18 · TypeScript · Vite 6 · Tailwind CSS |
@@ -196,7 +206,7 @@ uv run pytest tests/ -v
 
 - [ ] 报告生成能力（`report_prompt` 已预留）
 - [ ] 前端国际化（`UIConfig` 已预留语言项）
-- [ ] 接入更多模型供应商（模型工厂已支持运行时切换）
+- [x] 接入任意 OpenAI 协议模型（设置面板 → 模型设置 → 添加模型，一个 active 模型驱动对话与 RAG 全链路）
 - [ ] 知识库支持更多文件格式（docx / markdown / 代码文件）
 - [ ] 反思笔记的 Web 端可视化面板增强
 
