@@ -4,8 +4,8 @@ Function:文件向量化上传Chroma数据库
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_deepseek import ChatDeepSeek
 from tool.config_handler import Chroma_Config,Prompt_Config
+from factory.model_generator import create_ragmodel
 from tool.path_tool import get_abs_path
 from vector_uploader_service.md5_tools import md5_file_check,md5_loader,md5_trans
 from vector_uploader_service.file_record import record_file
@@ -32,9 +32,7 @@ class File_Uploader():
                 model=Chroma_Config['embedding_model_name']
                 )
         )
-        self.splitters_model=ChatDeepSeek(
-            model="deepseek-v4-flash",
-        )
+        self.splitters_model=create_ragmodel()
         self.textsplitter=RecursiveCharacterTextSplitter(
             separators=Chroma_Config['separators'],
             keep_separator=False,

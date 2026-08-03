@@ -61,6 +61,41 @@ def SessionLoadConfig(abs_path:str|None=None,encoding='utf-8'):
 
 Session_Config=SessionLoadConfig()
 
+def ModelLoadConfig(abs_path:str|None=None,encoding='utf-8'):
+    """读取模型注册表 config/ModelConfig.yml。
+    文件缺失时返回内存默认（不写盘）：保持 DeepSeek 默认行为（base_url/api_key 留空 → 环境变量）。
+    """
+    if not abs_path:
+        abs_path=get_abs_path("config/ModelConfig.yml")
+    if os.path.exists(abs_path):
+        with open(abs_path,'r',encoding=encoding) as f:
+            return yaml.load(f,Loader=yaml.FullLoader) or {}
+    return {
+        "active_model": "deepseek-default",
+        "models": [{
+            "name": "deepseek-default",
+            "label": "DeepSeek（默认）",
+            "base_url": "",
+            "api_key": "",
+            "model": "deepseek-v4-pro",
+        }],
+    }
+
+Model_Config=ModelLoadConfig()
+
+def reload_model_config() -> dict:
+    """就地重读 ModelConfig.yml 到模块级 Model_Config（保持外部 import 引用有效）"""
+    Model_Config.clear()
+    Model_Config.update(ModelLoadConfig())
+    return Model_Config
+
+def save_model_config() -> None:
+    """将 Model_Config 写回 config/ModelConfig.yml"""
+    abs_path=get_abs_path("config/ModelConfig.yml")
+    os.makedirs(os.path.dirname(abs_path) or ".", exist_ok=True)
+    with open(abs_path,"w",encoding="utf-8") as f:
+        yaml.dump(Model_Config, f, allow_unicode=True, default_flow_style=False)
+
 def update_config(name: str, values: dict) -> None:
     """
     将配置值写入对应的 YAML 文件。

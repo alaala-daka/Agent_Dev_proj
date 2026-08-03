@@ -1,3 +1,5 @@
+import type { ModelEntry, ModelInput, ModelListResponse } from '../types/config';
+
 // fetch wrapper for REST API
 const BASE = '/api';
 
@@ -30,6 +32,26 @@ export const apiClient = {
     request<{ config: string; updated: string[] }>(`/config/${name}`, {
       method: 'PUT',
       body: JSON.stringify({ values }),
+    }),
+
+  // ── Models ──
+  listModels: () => request<ModelListResponse>('/models'),
+  addModel: (input: ModelInput) =>
+    request<{ created: string; active: string }>('/models', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateModel: (name: string, patch: Partial<Omit<ModelEntry, 'name'>>) =>
+    request<{ updated: string }>(`/models/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
+  deleteModel: (name: string) =>
+    request<{ deleted: string; active: string }>(`/models/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  setActiveModel: (name: string) =>
+    request<{ active: string; model_info?: Record<string, unknown> }>('/models/active', {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
     }),
 
   // ── Files / RAG ──

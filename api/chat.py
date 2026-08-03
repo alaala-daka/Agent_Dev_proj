@@ -69,6 +69,17 @@ def evict_agent(session_id: str) -> None:
         logger.info(f"[chat] 已驱逐 Agent 缓存: session={session_id}")
 
 
+def evict_all_agents_for_model_change() -> None:
+    """模型切换时调用：仅清空缓存，不做墓碑、不动进行中的流。
+
+    进行中的 WebSocket 持有自己的 agent 局部引用，其流与 finally 保存不受影响；
+    新连接会基于新模型重建 Agent。
+    """
+    with _lock:
+        _agents.clear()
+    logger.info("[chat] 模型变更：已驱逐全部 Agent 缓存")
+
+
 # ── ask_for_answer 的 WebSocket 适配 ──
 
 # 全局映射: request_id → asyncio.Event

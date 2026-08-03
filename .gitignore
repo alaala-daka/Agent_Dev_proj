@@ -12,6 +12,7 @@ wheels/
 logs/
 main.py
 config/SystemConfig.yml
+config/ModelConfig.yml
 CLAUDE.md
 Chromadb/
 sessions/

@@ -2,7 +2,7 @@ from langchain_chroma import Chroma
 from vector_uploader_service.file_uploader import File_Uploader
 from tool.config_handler import Rag_Config,Prompt_Config
 from tool.path_tool import get_abs_path
-from factory.model_generator import ragsummarizemodel
+from factory.model_generator import create_ragmodel
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 """
@@ -17,7 +17,7 @@ class _Rag_Summarize(File_Uploader):
     def __init__(self) -> None:
         super().__init__()
         self.retriever=self.get_retriever()
-        self.summarize_model=ragsummarizemodel
+        self.summarize_model=create_ragmodel()
         rag_prompt_path = get_abs_path(Prompt_Config['rag_prompt_path'])
         self.sys_prompt=open(rag_prompt_path,'r',encoding='utf-8').read()
         self.chat_tem=ChatPromptTemplate(
