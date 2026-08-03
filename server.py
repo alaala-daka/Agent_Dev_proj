@@ -13,6 +13,7 @@ from api.sessions import router as sessions_router
 from api.config import router as config_router
 from api.files import router as files_router
 from api.tools import router as tools_router
+from api.models import router as models_router
 
 
 @asynccontextmanager
@@ -46,6 +47,7 @@ app.include_router(sessions_router, prefix="/api")
 app.include_router(config_router, prefix="/api")
 app.include_router(files_router, prefix="/api")
 app.include_router(tools_router, prefix="/api")
+app.include_router(models_router, prefix="/api")
 
 
 @app.get("/api/health")

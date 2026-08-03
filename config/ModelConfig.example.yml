@@ -1,0 +1,17 @@
+# 模型注册表模板（复制为 ModelConfig.yml 使用；ModelConfig.yml 已被 gitignore，不会提交你的 API key）
+#
+# 每个模型项字段说明：
+#   name     — 唯一标识（用于切换 active，创建后不可修改）
+#   label    — 前端展示的显示名
+#   base_url — OpenAI 协议兼容的 API 地址（含 /v1）。留空则使用内置 DeepSeek + 环境变量 DEEPSEEK_API_KEY
+#   api_key  — 该模型的 API key。留空且 base_url 非空时后端传占位符（适合 Ollama 等本地端点）
+#   model    — 模型名（发送给 API 的 model 字段）
+#
+# 所有环节（主对话 / 会话标题 / RAG 总结 / 文件切分）都使用 active_model 指向的模型。
+active_model: deepseek-default
+models:
+  - name: deepseek-default
+    label: DeepSeek（默认）
+    base_url: ""
+    api_key: ""
+    model: deepseek-v4-pro
