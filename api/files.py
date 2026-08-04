@@ -3,17 +3,24 @@
 """
 import os
 import datetime
+import uuid
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
-from tool.config_handler import Rag_Config, get_abs_path
+from tool.config_handler import Rag_Config
 from tool.file_handler import get_supported_extensions
 from tool.logger_handler import logger
+from tool.path_tool import get_project_root
 from vector_uploader_service.file_record import list_all_files, get_all_records, remove_records_by_file
 
 router = APIRouter()
 
-UPLOAD_DIR = get_abs_path("uploads")
+# 上传目录固定锚定到项目根，确保与 file_manage 沙箱（config/FileManageConfig.yml allowed_paths）一致，
+# 避免服务器从非项目根 CWD 启动时上传落在沙箱外、Agent 无法访问。
+UPLOAD_DIR = os.path.join(get_project_root(), "uploads")
+
+# 聊天附件大小上限：≥10MB 直接拒绝（与前端一致）
+CHAT_UPLOAD_MAX = 10 * 1024 * 1024
 
 
 @router.get("/files/rag-files")
@@ -76,6 +83,42 @@ async def api_upload_file(file: UploadFile = File(...)):
     except Exception as e:
         logger.exception(f"[files] RAG 上传失败: {safe_name}")
         raise HTTPException(status_code=500, detail=f"RAG 上传失败: {str(e)}")
+
+
+@router.post("/files/chat-upload")
+async def api_chat_upload_file(file: UploadFile = File(...)):
+    """上传聊天附件到沙箱（uploads/），存为副本，不进入 RAG。
+
+    返回 {file_name, path, size}，其中 path 为项目根相对路径（如 uploads/foo.txt），
+    必在 file_manage 沙箱内，可直接供 Agent 用 file_manage 读取/修改。
+    """
+    # 验证文件类型（与 RAG 上传一致，从 Rag_Config.support_extensions 派生）
+    allowed_exts = tuple(get_supported_extensions())
+    if not file.filename or not file.filename.lower().endswith(allowed_exts):
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件类型。仅允许: {', '.join(allowed_exts)}"
+        )
+
+    content = await file.read()
+    # ≥10MB 拒绝，与前端一致（用 >= 保证恰好 10MB 也被拒）
+    if len(content) >= CHAT_UPLOAD_MAX:
+        raise HTTPException(status_code=400, detail="文件大小超过 10MB 上限")
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    original_name = os.path.basename(file.filename)
+    safe_name = original_name
+    # 防同名覆盖（uploads/ 同时被 RAG 与聊天附件使用）
+    while os.path.exists(os.path.join(UPLOAD_DIR, safe_name)):
+        stem, ext = os.path.splitext(original_name)
+        safe_name = f"{stem}_{uuid.uuid4().hex[:8]}{ext}"
+    dest_path = os.path.join(UPLOAD_DIR, safe_name)
+    with open(dest_path, "wb") as f:
+        f.write(content)
+
+    logger.info(f"[files] 聊天附件已存盘: {safe_name}, size={len(content)}")
+    # path 固定 uploads/ 前缀 + 前斜杠，保证沙箱校验通过
+    return {"file_name": original_name, "path": f"uploads/{safe_name}", "size": len(content)}
 
 
 @router.delete("/files/rag-files/{file_name}")

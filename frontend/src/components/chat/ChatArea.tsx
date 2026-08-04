@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useEffect } from 'react';
-import type { DisplayMessage, AskUserMessage } from '../../types/chat';
+import type { DisplayMessage, AskUserMessage, ChatAttachment } from '../../types/chat';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { EmptyState } from './EmptyState';
@@ -13,7 +13,7 @@ interface ChatAreaProps {
   askUser: AskUserMessage | null;
   hasSession: boolean;
   loadingHistory: boolean;
-  onSend: (content: string) => void;
+  onSend: (content: string, attachments?: ChatAttachment[]) => void;
   onCancel: () => void;
   onAnswerUser: (requestId: string, answer: 'approved' | 'rejected', detail?: string) => void;
   onDismissAskUser: () => void;

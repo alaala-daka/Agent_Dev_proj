@@ -133,9 +133,23 @@ def test_resolve_normal_relative_path(temp_workspace):
 
 def test_sandbox_allows_path_within():
     project_root = _get_project_root()
-    within = os.path.join(project_root, "config", "AgentConfig.yml")
+    # 沙箱默认为 uploads/（用户上传文件目录）
+    within = os.path.join(project_root, "uploads", "note.txt")
     allowed, _ = is_within_sandbox(within)
     assert allowed is True
+
+
+def test_default_sandbox_is_uploads_only():
+    """安全默认：allowed_paths 仅含 uploads/，不含项目根 '.'"""
+    allowed = FileManage_Config.get("allowed_paths", ["."])
+    assert "uploads" in allowed
+    assert "." not in allowed
+
+
+def test_file_manage_rejects_outside_sandbox():
+    """加固：uploads/ 之外的项目文件（如 config/）必须被 file_manage 拒绝"""
+    result = fm("read config/AgentConfig.yml")
+    assert "允许的目录" in result or "安全校验" in result
 
 
 def test_sandbox_rejects_path_outside():
@@ -264,8 +278,12 @@ def test_file_manage_read_nonexistent(temp_workspace):
     assert "不存在" in result
 
 
-def test_file_manage_read_blocked_path():
-    result = fm("read .env")
+def test_file_manage_read_blocked_path(temp_workspace):
+    # 在沙箱内放一个 .env，验证 glob 模式拦截（与沙箱位置无关）
+    env = os.path.join(temp_workspace, ".env")
+    with open(env, "w", encoding="utf-8") as f:
+        f.write("SECRET=1\n")
+    result = fm(f"read {env}")
     assert "禁止" in result or "拦截" in result or "被阻止" in result
 
 

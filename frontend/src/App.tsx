@@ -5,6 +5,25 @@ import { useWebSocket } from './hooks/useWebSocket';
 import { apiClient } from './api/client';
 import type { DisplayMessage } from './types/chat';
 
+/** 用户消息里上传文件注释块的匹配（与后端 Agent.build_file_note 的标记一致） */
+const FILE_NOTE_RE = /\[已上传文件\][\s\S]*?\[[/]?已上传文件\]/g;
+
+/** 剥离用户消息中的上传文件注释块，返回剩余文本与文件路径列表 */
+function parseFileNote(text: string): { stripped: string; paths: string[] } {
+  const paths: string[] = [];
+  const stripped = text
+    .replace(FILE_NOTE_RE, (block) => {
+      for (const line of block.split('\n')) {
+        const m = line.match(/^-\s+(.+)$/);
+        if (m) paths.push(m[1].trim());
+      }
+      return '';
+    })
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+  return { stripped, paths };
+}
+
 /** 将后端消息格式转换为前端 DisplayMessage；无可渲染内容的记录返回 null */
 function convertBackendMessage(msg: Record<string, unknown>, index: number): DisplayMessage | null {
   const type = (msg.type as string) || 'human';
@@ -16,16 +35,32 @@ function convertBackendMessage(msg: Record<string, unknown>, index: number): Dis
   };
   const role = roleMap[type] || 'agent';
   // 对 tool message，检查是否包含错误
-  const content = typeof msg.content === 'string' ? msg.content : '';
+  let content = typeof msg.content === 'string' ? msg.content : '';
   const isTool = type === 'tool';
   const error = msg.error as string | undefined;
-  // 跳过无文本的 AI/用户历史消息（纯 tool_calls 中间步骤 / 历史遗留空记录），避免空气泡
-  if (!isTool && !content.trim()) return null;
+
+  // 用户消息：剥离上传文件注释块，改为附件 chip
+  let attachments: DisplayMessage['attachments'];
+  if (type === 'human') {
+    const { stripped, paths } = parseFileNote(content);
+    content = stripped;
+    if (paths.length) {
+      attachments = paths.map(p => ({
+        name: p.split('/').pop() || p,
+        path: p,
+        size: 0, // 历史不持久化大小；UI 对 size===0 省略大小段
+      }));
+    }
+  }
+
+  // 跳过无文本且无附件的 AI/用户历史消息（纯 tool_calls 中间步骤 / 历史遗留空记录），避免空气泡
+  if (!isTool && !content.trim() && (!attachments || attachments.length === 0)) return null;
   return {
     id: `history-${index}`,
     role: isTool ? 'tool' : role,
     content: isTool ? (error || content) : content,
     timestamp: Date.now() - (1000 - index),
+    ...(attachments ? { attachments } : {}),
     ...(isTool ? { toolCall: {
       call_id: `hist-${index}`,
       tool: (msg.tool as string) || (msg.name as string) || 'unknown',

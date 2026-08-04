@@ -11,10 +11,11 @@ encoding: utf-8
 mode: auto
 
 # 允许操作的根目录列表（相对于项目根目录）
-# ".." 表示项目根目录，可添加子目录如 "workspace/", "output/"
-# 所有文件操作必须在这些目录内，否则被拒绝
+# 安全默认：仅允许 uploads/（用户上传文件的落盘目录）。
+# 部署到服务器后 Agent 只能读写该目录内的文件，无法触碰 config/、源码、sessions/ 等。
+# 如需调整，可添加子目录如 "workspace/", "output/"；所有文件操作必须在这些目录内，否则被拒绝。
 allowed_paths:
-  - "."
+  - "uploads"
 
 # 全局禁止模式（glob 格式，匹配绝对路径）
 # 在 manual 和 auto 模式下均生效，无例外

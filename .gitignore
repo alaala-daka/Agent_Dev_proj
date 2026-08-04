@@ -16,3 +16,4 @@ config/ModelConfig.yml
 CLAUDE.md
 Chromadb/
 sessions/
+uploads/
