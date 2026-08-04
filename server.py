@@ -20,9 +20,14 @@ from api.models import router as models_router
 async def lifespan(app: FastAPI):
     """应用生命周期：启动时初始化，关闭时清理"""
     from tool.logger_handler import logger
+    from tool.uploads_cleanup import start_uploads_cleanup, stop_uploads_cleanup
     logger.info("[server] Agent_Dev API 服务器启动")
-    yield
-    logger.info("[server] Agent_Dev API 服务器关闭")
+    start_uploads_cleanup()
+    try:
+        yield
+    finally:
+        stop_uploads_cleanup()
+        logger.info("[server] Agent_Dev API 服务器关闭")
 
 
 app = FastAPI(
