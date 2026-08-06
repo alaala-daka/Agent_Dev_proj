@@ -323,15 +323,25 @@ _SEVERITY_LABEL: dict[str, str] = {
 
 _VALID_SEVERITIES = frozenset(_SEVERITY_ICON.keys())
 
-# ID 计数器（基于现有 note 数量初始化）
-
-_reflection_id_counter = len(_reflection_chroma.get(include=[])["ids"])
+def _max_ref_num() -> int:
+    """现有 ids 中最大 ref_N 的 N；无则 0。修复'按总数计数'导致删除后重复 id 的 bug。"""
+    try:
+        ids = _reflection_chroma.get(include=[])["ids"]
+    except Exception:
+        return 0
+    nums = []
+    for rid in ids:
+        if isinstance(rid, str) and rid.startswith("ref_"):
+            try:
+                nums.append(int(rid.split("_", 1)[1]))
+            except ValueError:
+                continue  # 跳过畸形 id（如 ref_abc），不影响稳定性
+    return max(nums) if nums else 0
 
 
 def _next_ref_id() -> str:
-    global _reflection_id_counter
-    _reflection_id_counter += 1
-    return f"ref_{_reflection_id_counter}"
+    """始终基于 max+1：删除后不重排、永不复用现存 id、跨重启稳定。"""
+    return f"ref_{_max_ref_num() + 1}"
 
 
 def _build_page_content(error_desc: str, solution: str, philosophy: str) -> str:
@@ -416,8 +426,6 @@ def _fmt_notes(entries: list[dict[str, Any]], with_similarity: bool = False) -> 
   'cleanup 90'
   'stats'""")
 def reflection(command: str) -> str:
-    global _reflection_id_counter
-
     cmd = command.strip()
     if not cmd:
         return _help_text()
@@ -788,6 +796,138 @@ delete <ref_id>
 update <ref_id> | <错误> | <解决> | <理解> [| <标签> | <严重程度>]
 cleanup <天数>
 stats"""
+
+
+# ═══════════════════════════════════════════════════════════
+#  结构化数据访问（供 Web 面板 / REST API 使用，返回 dict）
+# ═══════════════════════════════════════════════════════════
+
+def _reflection_meta_to_dict(meta: dict) -> dict:
+    """metadata → 前端 JSON 安全 dict。tags 保持逗号分隔字符串（与存储一致，可无损回写）。"""
+    return {
+        "ref_id":     meta.get("ref_id", ""),
+        "error_desc": meta.get("error_desc", ""),
+        "solution":   meta.get("solution", ""),
+        "philosophy": meta.get("philosophy", ""),
+        "tags":       meta.get("tags", "general"),
+        "severity":   meta.get("severity", "medium"),
+        "timestamp":  meta.get("timestamp", ""),
+        "updated_at": meta.get("updated_at", ""),
+    }
+
+
+def _validate_ref_fields(error_desc: str, solution: str, philosophy: str, severity: str) -> None:
+    """新增/更新共用的字段校验；tags 单独处理。"""
+    if not (error_desc.strip() and solution.strip() and philosophy.strip()):
+        raise ValueError("错误描述 / 解决方案 / 哲学理解 不能为空")
+    if severity not in _VALID_SEVERITIES:
+        raise ValueError(f"无效严重程度: {severity}（可选 fatal/high/medium/low）")
+
+
+def _normalize_tags(tags: str | None) -> str:
+    """去首尾空格、剔除空标签与分隔符 |（防止污染 CLI 的 '|' 解析），逗号连接。"""
+    if not tags:
+        return "general"
+    cleaned = ",".join(t.strip().replace("|", "") for t in tags.split(",") if t.strip())
+    return cleaned or "general"
+
+
+def list_reflections() -> list[dict]:
+    """全部笔记，按 timestamp 倒序。返回结构化 dict 列表。"""
+    try:
+        all_data = _reflection_chroma.get()
+    except Exception as e:
+        logger.warning(f"[reflection] list 获取数据失败: {e}")
+        return []
+    if not all_data or not all_data["ids"]:
+        return []
+    entries = []
+    for i, _ in enumerate(all_data["ids"]):
+        meta = all_data["metadatas"][i] if all_data["metadatas"] else {}
+        entries.append(_reflection_meta_to_dict(meta))
+    entries.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
+    return entries
+
+
+def get_reflection(ref_id: str) -> dict | None:
+    """按 id 取单条；不存在返回 None。"""
+    try:
+        data = _reflection_chroma.get(ids=[ref_id])
+    except Exception as e:
+        logger.warning(f"[reflection] get {ref_id} 失败: {e}")
+        return None
+    if not data or not data["ids"]:
+        return None
+    meta = data["metadatas"][0] if data["metadatas"] else {}
+    return _reflection_meta_to_dict(meta)
+
+
+def create_reflection(error_desc: str, solution: str, philosophy: str,
+                      tags: str = "general", severity: str = "medium") -> dict:
+    """新增。id 来自 _next_ref_id()（max+1）。返回创建后的 dict。"""
+    _validate_ref_fields(error_desc, solution, philosophy, severity)
+    _tags = _normalize_tags(tags)
+    ref_id = _next_ref_id()
+    ts = _now_iso()
+    page_content = _build_page_content(error_desc.strip(), solution.strip(), philosophy.strip())
+    _reflection_chroma.add_texts(
+        texts=[page_content],
+        ids=[ref_id],
+        metadatas=[{
+            "ref_id": ref_id,
+            "error_desc": error_desc.strip(),
+            "solution": solution.strip(),
+            "philosophy": philosophy.strip(),
+            "tags": _tags,
+            "severity": severity,
+            "timestamp": ts,
+        }],
+    )
+    return get_reflection(ref_id)
+
+
+def update_reflection(ref_id: str, error_desc: str | None = None, solution: str | None = None,
+                      philosophy: str | None = None, tags: str | None = None,
+                      severity: str | None = None) -> dict | None:
+    """局部更新：仅合并非 None 字段，保留原 timestamp，写入 updated_at。返回更新后 dict；不存在返回 None。"""
+    existing = get_reflection(ref_id)
+    if existing is None:
+        return None
+    new_desc = error_desc if error_desc is not None else existing["error_desc"]
+    new_sol = solution if solution is not None else existing["solution"]
+    new_phi = philosophy if philosophy is not None else existing["philosophy"]
+    new_tags = _normalize_tags(tags if tags is not None else existing["tags"])
+    new_sev = severity if severity is not None else existing["severity"]
+    _validate_ref_fields(new_desc, new_sol, new_phi, new_sev)
+
+    old_ts = existing["timestamp"]
+    page_content = _build_page_content(new_desc.strip(), new_sol.strip(), new_phi.strip())
+    # Chroma 无法原地更新 page_content 的 embedding → 沿用现有"先删后插"策略
+    _reflection_chroma.delete(ids=[ref_id])
+    _reflection_chroma.add_texts(
+        texts=[page_content],
+        ids=[ref_id],
+        metadatas=[{
+            "ref_id": ref_id,
+            "error_desc": new_desc.strip(),
+            "solution": new_sol.strip(),
+            "philosophy": new_phi.strip(),
+            "tags": new_tags,
+            "severity": new_sev,
+            "timestamp": old_ts,
+            "updated_at": _now_iso(),
+        }],
+    )
+    return get_reflection(ref_id)
+
+
+def delete_reflection(ref_id: str) -> bool:
+    """删除；存在并删除成功返回 True，否则 False（不重排、不重编号）。"""
+    if get_reflection(ref_id) is None:
+        return False
+    _reflection_chroma.delete(ids=[ref_id])
+    return True
+
 
 """
 返回rag库搜索总结结果

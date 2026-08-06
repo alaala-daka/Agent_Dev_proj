@@ -118,6 +118,37 @@ async def main() -> int:
                   bool(form_open) and "API 地址 (base_url)" in text2 and "API Key" in text2 and "模型名 (model)" in text2,
                   "")
 
+            # ── 反思笔记面板冒烟（只读，不写库）──
+            ref_clicked = await ev("""
+                (() => {
+                  const btn = [...document.querySelectorAll('button')].find(
+                    b => b.textContent.includes('反思笔记'));
+                  if (!btn) return false;
+                  btn.click(); return true;
+                })()
+            """)
+            check("打开反思笔记区", bool(ref_clicked), "")
+            await asyncio.sleep(1.5)
+
+            text3 = await ev("document.body.innerText") or ""
+            check("反思笔记区渲染",
+                  "反思笔记" in text3 and "新增笔记" in text3,
+                  f"add={'新增笔记' in text3}")
+
+            ref_form = await ev("""
+                (() => {
+                  const btn = [...document.querySelectorAll('button')].find(
+                    b => b.textContent.includes('新增笔记'));
+                  if (!btn) return false;
+                  btn.click(); return true;
+                })()
+            """)
+            await asyncio.sleep(0.8)
+            text4 = await ev("document.body.innerText") or ""
+            check("新增笔记表单展开",
+                  bool(ref_form) and "错误描述" in text4 and "实时预览" in text4 and "严重程度" in text4,
+                  "")
+
             await asyncio.sleep(0.5)
             check("无 JS 异常", len(js_errors) == 0, f"exceptions={len(js_errors)}")
 

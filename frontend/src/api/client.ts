@@ -1,4 +1,4 @@
-import type { ModelEntry, ModelInput, ModelListResponse } from '../types/config';
+import type { ModelEntry, ModelInput, ModelListResponse, ReflectionEntry, ReflectionCreate, ReflectionUpdate } from '../types/config';
 import type { ChatAttachment } from '../types/chat';
 
 // fetch wrapper for REST API
@@ -74,6 +74,21 @@ export const apiClient = {
     request<{ file_count: number; total_chunks: number; vector_count: number; supported_extensions: string[] }>('/files/rag-status'),
   deleteRagFile: (name: string) =>
     request<{ deleted: string }>(`/files/rag-files/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+
+  // ── Reflections（反思笔记）──
+  listReflections: () => request<{ reflections: ReflectionEntry[] }>('/reflections'),
+  createReflection: (input: ReflectionCreate) =>
+    request<{ reflection: ReflectionEntry }>('/reflections', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateReflection: (refId: string, patch: ReflectionUpdate) =>
+    request<{ reflection: ReflectionEntry }>(`/reflections/${encodeURIComponent(refId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
+  deleteReflection: (refId: string) =>
+    request<{ deleted: string }>(`/reflections/${encodeURIComponent(refId)}`, { method: 'DELETE' }),
 
   // ── Tools ──
   listTools: () => request<{ tools: unknown[] }>('/tools'),
