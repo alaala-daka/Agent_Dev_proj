@@ -323,6 +323,9 @@ _SEVERITY_LABEL: dict[str, str] = {
 
 _VALID_SEVERITIES = frozenset(_SEVERITY_ICON.keys())
 
+# 严重程度排序权重：0 最小 → 排序 reverse 后 fatal 在前（"重要优先"展示）
+_SEVERITY_RANK: dict[str, int] = {"fatal": 0, "high": 1, "medium": 2, "low": 3}
+
 def _max_ref_num() -> int:
     """现有 ids 中最大 ref_N 的 N；无则 0。修复'按总数计数'导致删除后重复 id 的 bug。"""
     try:
@@ -833,7 +836,7 @@ def _normalize_tags(tags: str | None) -> str:
 
 
 def list_reflections() -> list[dict]:
-    """全部笔记，按 timestamp 倒序。返回结构化 dict 列表。"""
+    """全部笔记，按严重程度降序（fatal>high>medium>low），同级内按 timestamp 倒序。返回结构化 dict 列表。"""
     try:
         all_data = _reflection_chroma.get()
     except Exception as e:
@@ -845,7 +848,10 @@ def list_reflections() -> list[dict]:
     for i, _ in enumerate(all_data["ids"]):
         meta = all_data["metadatas"][i] if all_data["metadatas"] else {}
         entries.append(_reflection_meta_to_dict(meta))
+    # 先按时间倒序（稳定），再按严重程度升序稳定排序：
+    # fatal(0) 在前、low(3) 在后、未知(99) 兜底最后；同级内保持时间倒序。
     entries.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
+    entries.sort(key=lambda e: _SEVERITY_RANK.get(e.get("severity", "medium"), 99))
     return entries
 
 

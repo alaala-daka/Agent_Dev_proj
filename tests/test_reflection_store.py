@@ -169,6 +169,25 @@ def test_list_reflections_sorted_desc(fake_chroma):
     assert [i["ref_id"] for i in items] == ["ref_2", "ref_3", "ref_1"]
 
 
+def test_list_reflections_sorted_by_severity_then_time(fake_chroma):
+    """重要优先：fatal > high > medium > low；同级内按 timestamp 倒序。"""
+    _seed(fake_chroma, "ref_1", timestamp="2026-01-01 10:00:00", severity="high")
+    _seed(fake_chroma, "ref_2", timestamp="2026-03-01 10:00:00", severity="fatal")
+    _seed(fake_chroma, "ref_3", timestamp="2026-02-01 10:00:00", severity="low")
+    _seed(fake_chroma, "ref_4", timestamp="2026-04-01 10:00:00", severity="fatal")
+    _seed(fake_chroma, "ref_5", timestamp="2026-05-01 10:00:00", severity="medium")
+    items = agent_tools.list_reflections()
+    assert [i["ref_id"] for i in items] == ["ref_4", "ref_2", "ref_1", "ref_5", "ref_3"]
+
+
+def test_list_reflections_unknown_severity_sorted_last(fake_chroma):
+    """未知严重程度兜底排最后（不影响既有顺序）。"""
+    _seed(fake_chroma, "ref_1", timestamp="2026-01-01 10:00:00", severity="high")
+    _seed(fake_chroma, "ref_2", timestamp="2026-02-01 10:00:00", severity="unknown")
+    items = agent_tools.list_reflections()
+    assert [i["ref_id"] for i in items] == ["ref_1", "ref_2"]
+
+
 def test_delete_reflection(fake_chroma):
     agent_tools.create_reflection("a", "b", "c")
     assert agent_tools.delete_reflection("ref_1") is True

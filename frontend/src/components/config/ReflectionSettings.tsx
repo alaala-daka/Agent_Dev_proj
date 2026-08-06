@@ -12,6 +12,7 @@ import type { ReflectionEntry } from '../../types/config';
 const SEVERITY_LABEL: Record<string, string> = { fatal: '致命', high: '严重', medium: '一般', low: '轻微' };
 const SEVERITY_COLOR: Record<string, string> = { fatal: '#FF3B30', high: '#FF9F0A', medium: '#FFD60A', low: '#30B158' };
 const SEVERITY_OPTIONS = ['fatal', 'high', 'medium', 'low'];
+const PAGE_SIZE = 5;
 
 interface ToastState {
   message: string;
@@ -88,6 +89,8 @@ export const ReflectionSettings: React.FC = () => {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [severityFilter, setSeverityFilter] = useState<string | null>(null); // null = 全部
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const editingEntry =
     editingRefId && editingRefId !== 'new'
@@ -101,6 +104,7 @@ export const ReflectionSettings: React.FC = () => {
   const openAdd = () => {
     setForm(emptyForm);
     setEditingRefId('new');
+    setVisibleCount(PAGE_SIZE);
   };
 
   const openEdit = (r: ReflectionEntry) => {
@@ -112,11 +116,13 @@ export const ReflectionSettings: React.FC = () => {
       severity: r.severity,
     });
     setEditingRefId(r.ref_id);
+    setVisibleCount(PAGE_SIZE);
   };
 
   const closeForm = () => {
     setEditingRefId(null);
     setExpandedId(null);
+    setVisibleCount(PAGE_SIZE);
   };
 
   const handleSubmit = async () => {
@@ -165,6 +171,14 @@ export const ReflectionSettings: React.FC = () => {
 
   // ── 列表态 ──
   if (editingRefId === null) {
+    // 后端已按严重程度降序 + 同级 timestamp 倒序返回；此处只做过滤 + 分页切片
+    const filtered = severityFilter
+      ? reflections.filter((r) => r.severity === severityFilter)
+      : reflections;
+    const visible = filtered.slice(0, visibleCount);
+    const hasMore = visibleCount < filtered.length;
+    const remaining = filtered.length - visibleCount;
+
     return (
       <div className="space-y-4">
         {/* 头部 */}
@@ -177,6 +191,36 @@ export const ReflectionSettings: React.FC = () => {
           </Button>
         </div>
 
+        {/* 严重程度筛选 */}
+        <div className="flex flex-wrap gap-1.5">
+          {[
+            { value: null, label: '全部', count: reflections.length },
+            ...SEVERITY_OPTIONS.map((s) => ({
+              value: s,
+              label: SEVERITY_LABEL[s],
+              count: reflections.filter((r) => r.severity === s).length,
+            })),
+          ].map((opt) => {
+            const active = severityFilter === opt.value;
+            return (
+              <button
+                key={opt.value ?? 'all'}
+                onClick={() => {
+                  setSeverityFilter(opt.value);
+                  setVisibleCount(PAGE_SIZE);
+                }}
+                className={`px-2 py-1 rounded-full text-[11px] border transition-colors font-sidebar ${
+                  active
+                    ? 'bg-[#0066CC]/10 text-[#0066CC] border-[#0066CC]/30'
+                    : 'bg-white text-[#6E6E73] border-[#E5E5EA] hover:border-[#0066CC]/40 hover:text-[#1D1D1F]'
+                }`}
+              >
+                {opt.label} ({opt.count})
+              </button>
+            );
+          })}
+        </div>
+
         {loading && reflections.length === 0 ? (
           <div className="flex items-center justify-center py-6">
             <Spinner />
@@ -185,9 +229,13 @@ export const ReflectionSettings: React.FC = () => {
           <p className="text-[11px] text-[#AEAEB2] font-sidebar">
             暂无反思笔记。Agent 完成任务后会沉淀经验教训，也可点击"新增笔记"手动记录。
           </p>
+        ) : filtered.length === 0 ? (
+          <p className="text-[11px] text-[#AEAEB2] font-sidebar">
+            该严重程度下暂无反思笔记。
+          </p>
         ) : (
           <div className="space-y-2">
-            {reflections.map((r) => {
+            {visible.map((r) => {
               const isExpanded = expandedId === r.ref_id;
               const tags = (r.tags || 'general').split(',').map((t) => t.trim()).filter(Boolean);
               return (
@@ -267,6 +315,20 @@ export const ReflectionSettings: React.FC = () => {
                 </div>
               );
             })}
+
+            {/* "⌵" 展开更多：最后一条卡片右下侧，每次 +5 */}
+            {hasMore && (
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-[#6E6E73]
+                    hover:text-[#1D1D1F] hover:bg-[#F0F0F2] transition-colors font-sidebar"
+                >
+                  <span className="text-sm leading-none">⌵</span>
+                  展开后续 {Math.min(PAGE_SIZE, remaining)} 条（剩余 {remaining}）
+                </button>
+              </div>
+            )}
           </div>
         )}
 

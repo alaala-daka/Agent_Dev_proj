@@ -17,5 +17,6 @@ CLAUDE.md
 Chromadb/
 sessions/
 uploads/
+.edge_cdp_profile_readme/
 .reasonix/
 reasonix.toml

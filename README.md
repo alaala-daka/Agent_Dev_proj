@@ -10,12 +10,12 @@
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9)
 
-Dadu Agent 是一个基于 **LangChain + LangGraph** 构建的全栈 AI 智能体项目：对话模型即插即用（默认 DeepSeek，可接入任意符合 OpenAI 协议的 LLM）、Chroma 为向量库、DashScope 为嵌入模型，内置 **7 个工具、2 个中间件、完整的 RAG 管线和双模式文件管理安全体系**。它既可以在终端里作为会话式 REPL 使用，也附带一个 React 实时聊天界面——支持 WebSocket 流式输出、工具调用可视化和浏览器内的"Agent 向你提问"交互。
+Dadu Agent 是一个基于 **LangChain + LangGraph** 构建的全栈 AI 智能体项目：对话模型即插即用（默认 DeepSeek，可接入任意符合 OpenAI 协议的 LLM）、Chroma 为向量库、DashScope 为嵌入模型，内置 **7 个工具、3 个中间件、完整的 RAG 管线和双模式文件管理安全体系**。它既可以在终端里作为会话式 REPL 使用，也附带一个 React 实时聊天界面——支持 WebSocket 流式输出、工具调用可视化和浏览器内的"Agent 向你提问"交互。
 
 <details>
 <summary>🇬🇧 English Introduction</summary>
 
-Dadu Agent is a full-stack AI agent framework built on **LangChain + LangGraph**, powered by a pluggable chat model (DeepSeek by default, or any OpenAI-protocol-compatible LLM you configure in the settings panel), Chroma (vector store) and DashScope (embeddings). It ships with **7 tools, 2 middleware hooks, a complete RAG pipeline, and a dual-mode (manual/auto) file-management safety system**. Use it as a session-aware terminal REPL, or through the bundled React chat UI with WebSocket streaming, visualized tool calls, and in-browser "agent asks you" clarification dialogs. Highlights: a Chroma-backed reflection notebook with severity tagging and semantic search, a 95%-confidence clarification tool, LLM-based semantic text splitting with MD5 dedup, persistent sessions with auto-generated Chinese titles, and a settings panel with drag-and-drop knowledge-base upload. Python ≥ 3.13, managed with `uv`.
+Dadu Agent is a full-stack AI agent framework built on **LangChain + LangGraph**, powered by a pluggable chat model (DeepSeek by default, or any OpenAI-protocol-compatible LLM you configure in the settings panel), Chroma (vector store) and DashScope (embeddings). It ships with **7 tools, 3 middleware hooks, a complete RAG pipeline, and a dual-mode (manual/auto) file-management safety system**. Use it as a session-aware terminal REPL, or through the bundled React chat UI with WebSocket streaming, visualized tool calls, and in-browser "agent asks you" clarification dialogs. Highlights: a Chroma-backed reflection notebook with severity tagging and semantic search, a 95%-confidence clarification tool, LLM-based semantic text splitting with MD5 dedup, persistent sessions with auto-generated Chinese titles, a settings panel with drag-and-drop knowledge-base upload, **a reflection-notes web panel with live CRUD, a real-time todo panel, chat file attachments that the agent can CRUD, and scheduled cleanup of uploaded files**. Python ≥ 3.13, managed with `uv`.
 
 </details>
 
@@ -23,7 +23,7 @@ Dadu Agent is a full-stack AI agent framework built on **LangChain + LangGraph**
 
 ## 📸 界面预览
 
-![Dadu Agent 主界面](readme_photos/chat_page.png)
+![Dadu Agent 主界面](README_material/chat_page.png)
 
 > 左侧会话列表支持搜索与多会话管理，一键创建新会话，即刻开始与 Agent 对话。
 
@@ -47,6 +47,10 @@ Dadu Agent is a full-stack AI agent framework built on **LangChain + LangGraph**
 
 每次涉及工具调用的对话结束后，`@after_agent` 中间件会自动提醒 Agent 把经验写入反思笔记——即使任务顺利完成，也值得记录"这次为什么做对了"。每条反思包含**错误现象、解决方案、哲学理解**三个必填字段，支持 fatal/high/medium/low 严重度分级与标签，存入独立的 Chroma 集合，可被后续任务**语义检索**复用。Agent 由此拥有了可积累、可回查的长期记忆。
 
+Web 端新增"设置 → 反思笔记"面板：可按严重度筛选、展开 Markdown 详情、实时新增/编辑/删除，所有操作通过 `/api/reflections` REST 接口同步到同一 Chroma 集合，实现人与 Agent 共用的反思知识库。
+
+<img src="README_material/reflection_panel.png" width="720" alt="反思笔记 Web 面板">
+
 ### ❓ 95% 置信度主动澄清
 
 当 Agent 对需求的理解度不足 95% 时，会调用 `ask_for_answer` 一次一个精准提问（"你倾向于 A 方案还是 B 方案？"），而不是凭猜测硬答。在 Web 端，这个原本属于终端的确认流程被无缝桥接到浏览器——Agent 弹出提问框，用户点击回答，5 分钟无响应自动视为拒绝。
@@ -55,6 +59,10 @@ Dadu Agent is a full-stack AI agent framework built on **LangChain + LangGraph**
 
 - **Manual 模式**：读操作自由，写/删/建目录必须经用户确认后携带 `--approved` 重试；
 - **Auto 模式**：在安全边界内自由 CRUD，禁止删除目录、禁止触碰系统路径。
+
+在 Web 端聊天输入框，点击回形针即可上传附件，文件暂存于 `uploads/` 并以 `[已上传文件]` 标注注入对话上下文，Agent 可立即用 `file_manage` 对线上文件进行读、写、追加、删除等 CRUD 操作，无需本地文件系统交互。
+
+<img src="README_material/chat_upload.png" width="720" alt="聊天附件上传">
 
 所有操作流经同一条安全管线：路径穿越阻断 → glob 黑名单（`.env`/`.git`/`Chromadb` 等）→ 写入扩展名白名单 → 1MB 读 / 5MB 写限额 → 目录深度限制，且全程留痕于独立日志。
 
@@ -77,9 +85,13 @@ Dadu Agent is a full-stack AI agent framework built on **LangChain + LangGraph**
 
 每个会话以 JSONL 落盘，支持多会话创建/切换/删除；首轮对话后由模型自动生成 ≤20 字的中文标题（如"Python爬虫脚本编写"）。流式输出带历史清洗与失败回滚——上游模型报错时会自动恢复到最近一个可用快照，不产生半截对话。
 
+### ⏰ 定时清理上传文件
+
+服务器启动时会开启一个 asyncio 后台任务，按 `config/FileManageConfig.yml` 中 `uploads_cleanup_interval_days` 的间隔扫描 `uploads/` 目录，删除超过 `uploads_cleanup_retention_days` 未被修改的临时附件。知识库文件受 `file_record.jsonl` 保护，不会被误删。这样 Agent 与用户生成的大量临时文件不会无限堆积，而 RAG 入库的源文件始终安全。
+
 ### 🌐 Web 端实时交互
 
-React 单页应用通过 WebSocket 接收逐字流式回复，工具调用以可展开的 chip 实时呈现（`rag_summarize 已执行`、`file_manage 已执行`…），Agent 回复完整渲染 Markdown 表格、代码块与流程图。
+React 单页应用通过 WebSocket 接收逐字流式回复，工具调用以可展开的 chip 实时呈现（`rag_summarize 已执行`、`file_manage 已执行`…），Agent 回复完整渲染 Markdown 表格、代码块与流程图。当 Agent 使用 `todo` 工具拆解任务时，聊天界面会实时渲染**待办清单面板**——进度条、状态图标、完成项划线，复杂任务进度一目了然。WebSocket 并发泵还让"停止"按钮与 `ask_for_answer` 提问在回复中途即可被响应，不再等到整轮结束。
 
 ## 🎬 对话演示
 
@@ -88,7 +100,7 @@ React 单页应用通过 WebSocket 接收逐字流式回复，工具调用以可
 
 <br>
 
-<img src="readme_photos/chat_example.png" width="720" alt="Dadu Agent 完整对话示例">
+<img src="README_material/chat_example.png" width="720" alt="Dadu Agent 完整对话示例">
 
 Agent 先查知识库与反思笔记，再调用 `file_manage` 写文件、读文件、改文件，多轮对话中持续迭代：从基础爬虫到三层重试架构，再到"连续失败 → 深度冷却 → 重建会话 → 重新挑战"的冷却复活机制。
 
@@ -103,7 +115,7 @@ graph TD
     UI --> SRV[FastAPI Server<br/>server.py :8001]
     REPL --> AG[Agent<br/>LangChain create_agent]
     SRV --> AG
-    AG --> MW[中间件<br/>tool_monitor / task_reflection_trigger]
+    AG --> MW[中间件<br/>tool_monitor / task_reflection_trigger<br/>todo_continue_trigger]
     AG --> TOOLS[7 个工具<br/>search · calculator · todo<br/>reflection · rag_summarize<br/>file_manage · ask_for_answer]
     AG --> LLM[对话模型<br/>默认 DeepSeek /<br/>任意 OpenAI 协议]
     TOOLS --> CHROMA[(Chroma<br/>knowledge_base<br/>agent_reflections)]
@@ -112,19 +124,19 @@ graph TD
 ```
 
 ```
-├── Agent.py                  # Agent 核心：工具装配、中间件、流式输出、会话持久化
+├── Agent.py                  # Agent 核心：工具装配、3 个中间件、流式输出、会话持久化
 ├── main_test.py              # 终端 REPL 入口（多会话 + 斜杠命令）
-├── server.py                 # FastAPI 入口（REST + WebSocket，端口 8001）
+├── server.py                 # FastAPI 入口（REST + WebSocket，端口 8001；启动上传清理任务）
 ├── file_upload_service.py    # 知识库上传入口
-├── agent_tools/              # 7 个工具 + 中间件 + 文件安全管线
-├── api/                      # REST / WebSocket 路由
+├── agent_tools/              # 7 个工具 + 3 个中间件 + 文件安全管线
+├── api/                      # REST / WebSocket 路由（含 reflections、files、chat）
 ├── config/                   # YAML 配置（模型 / RAG / 文件管理 / 会话 / UI）
 ├── factory/                  # 模型工厂（抽象工厂，支持运行时切换模型）
 ├── frontend/                 # React 18 + TypeScript + Vite + Tailwind
 ├── prompt/                   # 系统 / RAG / 语义切分 / 报告 提示词
 ├── session/                  # 会话存储逻辑
-├── tests/                    # 117 个 pytest 测试
-├── tool/                     # 配置加载、日志（loguru）、路径、提示词加载
+├── tests/                    # 176 个 pytest 测试
+├── tool/                     # 配置加载、日志（loguru）、路径、提示词加载、上传清理
 └── vector_uploader_service/  # RAG 摄取（LLM 切分 + MD5 去重）与检索摘要
 ```
 
@@ -174,12 +186,12 @@ uv run python file_upload_service.py
 | `ModelConfig.yml` | 模型注册表：active 模型 + `models[]`（名称 / 地址 / 密钥 / 模型名），驱动对话与 RAG 全链路（含密钥，已 gitignore，有 `.example` 模板） |
 | `RagConfig.yml` | RAG 摘要模型、MD5 去重与上传记录路径 |
 | `ChromaConfig.yml` | 嵌入模型（`text-embedding-v4`）、集合名、持久化目录、切分符 |
-| `FileManageConfig.yml` | 文件管理模式（`manual` / `auto`）、黑名单、扩展名白名单、大小与深度限额 |
+| `FileManageConfig.yml` | 文件管理模式（`manual` / `auto`）、黑名单、扩展名白名单、大小与深度限额、**上传文件定时清理**（开关 / 间隔 / 保留期） |
 | `SessionConfig.yml` | 会话目录、自动保存、标题持久化 |
 | `UIConfig.yml` | 主题（light/dark）、语言、侧栏宽度、字号 |
 | `PromptConfig.yml` | 各提示词文件路径 |
 
-<img src="readme_photos/tool_setting.png" width="400" alt="设置面板与 RAG 知识库">
+<img src="README_material/tool_setting.png" width="400" alt="设置面板与 RAG 知识库">
 
 > 设置面板：模型设置、工具管理、文件管理、系统提示词自定义；RAG 知识库支持拖拽上传 `.txt` / `.md` / `.docx` / 代码文件（支持格式可在 `RagConfig.yml` 的 `support_extensions` 配置），自动分块索引。
 
@@ -189,7 +201,7 @@ uv run python file_upload_service.py
 uv run pytest tests/ -v
 ```
 
-**117 个测试**覆盖：文件安全管线（路径穿越/黑名单/限额/审批流）、模型工厂（自定义 OpenAI 协议模型）、会话序列化与持久化、流式输出的历史清洗与反思触发。
+**176 个测试**覆盖：文件安全管线（路径穿越/黑名单/限额/审批流）、模型工厂（自定义 OpenAI 协议模型）、会话序列化与持久化、流式输出的历史清洗与反思触发、**反思笔记存储与 API**、**上传文件定时清理**、**聊天附件上传**、**todo 续跑 hook**。
 
 ## 🛠 技术栈
 
@@ -208,7 +220,7 @@ uv run pytest tests/ -v
 - [ ] 前端国际化（`UIConfig` 已预留语言项）
 - [x] 接入任意 OpenAI 协议模型（设置面板 → 模型设置 → 添加模型，一个 active 模型驱动对话与 RAG 全链路）
 - [x] 知识库支持更多文件格式（docx / markdown / 代码文件）
-- [ ] 反思笔记的 Web 端可视化面板增强
+- [x] 反思笔记的 Web 端可视化面板增强（设置面板 → 反思笔记：按严重度筛选、Markdown 预览、实时增删改）
 
 ---
 
