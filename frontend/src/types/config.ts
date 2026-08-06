@@ -41,3 +41,36 @@ export interface ModelListResponse {
   active_model: string;
   models: ModelEntry[];
 }
+
+/** 反思笔记严重程度 */
+export type ReflectionSeverity = 'fatal' | 'high' | 'medium' | 'low';
+
+/** 反思笔记一条记录（tags 为逗号分隔字符串，与后端存储一致） */
+export interface ReflectionEntry {
+  ref_id: string;
+  error_desc: string;
+  solution: string;
+  philosophy: string;
+  tags: string;
+  severity: ReflectionSeverity;
+  timestamp: string;
+  updated_at?: string;
+}
+
+/** 新增反思笔记的请求体 */
+export interface ReflectionCreate {
+  error_desc: string;
+  solution: string;
+  philosophy: string;
+  tags?: string;
+  severity?: string;
+}
+
+/** 局部更新反思笔记的请求体（全可选，仅合并传入字段） */
+export interface ReflectionUpdate {
+  error_desc?: string;
+  solution?: string;
+  philosophy?: string;
+  tags?: string;
+  severity?: string;
+}

@@ -14,6 +14,7 @@ from api.config import router as config_router
 from api.files import router as files_router
 from api.tools import router as tools_router
 from api.models import router as models_router
+from api.reflections import router as reflections_router
 
 
 @asynccontextmanager
@@ -53,6 +54,7 @@ app.include_router(config_router, prefix="/api")
 app.include_router(files_router, prefix="/api")
 app.include_router(tools_router, prefix="/api")
 app.include_router(models_router, prefix="/api")
+app.include_router(reflections_router, prefix="/api")
 
 
 @app.get("/api/health")
