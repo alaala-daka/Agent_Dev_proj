@@ -191,7 +191,7 @@ uv run python file_upload_service.py
 | `UIConfig.yml` | 主题（light/dark）、语言、侧栏宽度、字号 |
 | `PromptConfig.yml` | 各提示词文件路径 |
 
-<img src="README_material/tool_setting.png" width="400" alt="设置面板与 RAG 知识库">
+<img src="README_material/tool_setting_new.png" width="400" alt="设置面板与 RAG 知识库">
 
 > 设置面板：模型设置、工具管理、文件管理、系统提示词自定义；RAG 知识库支持拖拽上传 `.txt` / `.md` / `.docx` / 代码文件（支持格式可在 `RagConfig.yml` 的 `support_extensions` 配置），自动分块索引。
 
