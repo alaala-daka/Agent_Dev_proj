@@ -134,6 +134,9 @@ async def main() -> int:
             check("反思笔记区渲染",
                   "反思笔记" in text3 and "新增笔记" in text3,
                   f"add={'新增笔记' in text3}")
+            check("反思严重程度筛选渲染",
+                  "全部 (" in text3 and "致命 (" in text3 and "严重 (" in text3,
+                  f"all={'全部 (' in text3} fatal={'致命 (' in text3} high={'严重 (' in text3}")
 
             ref_form = await ev("""
                 (() => {
