@@ -25,7 +25,7 @@ export const apiClient = {
   deleteSession: (id: string) =>
     request<{ deleted: string }>(`/sessions/${id}`, { method: 'DELETE' }),
   getMessages: (id: string, offset = 0, limit = 50) =>
-    request<{ messages: unknown[]; total: number }>(`/sessions/${id}/messages?offset=${offset}&limit=${limit}`),
+    request<{ messages: unknown[]; total: number; todos?: import('../types/chat').TodoItem[] | null }>(`/sessions/${id}/messages?offset=${offset}&limit=${limit}`),
 
   // ── Config ──
   getConfig: (name: string) => request<{ config: string; values: Record<string, unknown> }>(`/config/${name}`),

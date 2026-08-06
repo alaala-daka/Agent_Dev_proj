@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import type { ServerMessage, ClientMessage, DisplayMessage, AskUserMessage, ChatAttachment } from '../types/chat';
+import type { ServerMessage, ClientMessage, DisplayMessage, AskUserMessage, ChatAttachment, TodoSnapshotMessage } from '../types/chat';
 
 interface UseWebSocketOptions {
   sessionId: string;
@@ -109,6 +109,26 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange, onTurnEn
         completeToolCall(msg.call_id, msg.error, true);
         break;
 
+      case 'todo': {
+        const m = msg as TodoSnapshotMessage;
+        if (!pendingMsgRef.current) {
+          pendingMsgRef.current = {
+            id: `agent-${Date.now()}`,
+            role: 'agent',
+            content: '',
+            timestamp: Date.now(),
+            isStreaming: true,
+            todoState: m.todos,
+          };
+          onStreamingChange(true);
+        } else {
+          pendingMsgRef.current.todoState = m.todos;
+          pendingMsgRef.current.isStreaming = true;
+        }
+        onMessage({ ...pendingMsgRef.current });
+        break;
+      }
+
       case 'ask_user':
         setAskUser(msg);
         break;
@@ -192,8 +212,10 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange, onTurnEn
 
   function flushPending() {
     if (pendingMsgRef.current) {
+      // 只有 todo 面板、无文本的消息也要保留
+      const hasTodo = !!(pendingMsgRef.current.todoState && pendingMsgRef.current.todoState.length > 0);
       // 不提交空白气泡
-      if (!pendingMsgRef.current.content.trim()) {
+      if (!pendingMsgRef.current.content.trim() && !hasTodo) {
         pendingMsgRef.current = null;
         return;
       }

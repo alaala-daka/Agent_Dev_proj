@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from session.session_store import (
     list_sessions, delete_session, get_session_info, session_exists,
-    load_session_messages, save_session_messages,
+    load_session_messages, save_session_messages, load_session_todos,
 )
 from tool.logger_handler import logger
 
@@ -82,4 +82,7 @@ async def api_get_messages(session_id: str, offset: int = 0, limit: int = 50):
     for msg in page:
         record = serialize_message(msg)
         serialized.append(record)
-    return {"messages": serialized, "total": total}
+    # 附上会话当前的 todo 状态，供前端历史回显待办面板
+    todos_state = load_session_todos(session_id)
+    todos = todos_state[0] if todos_state else []
+    return {"messages": serialized, "total": total, "todos": todos}

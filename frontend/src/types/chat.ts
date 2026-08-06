@@ -83,6 +83,20 @@ export interface SessionInfoMessage extends WsMessageBase {
   message_count: number;
 }
 
+export interface TodoItem {
+  id: number;
+  title: string;
+  desc: string;
+  status: 'pending' | 'in_progress' | 'done';
+  created_at?: string;
+  done_at?: string | null;
+}
+
+export interface TodoSnapshotMessage extends WsMessageBase {
+  type: 'todo';
+  todos: TodoItem[];
+}
+
 export type ServerMessage =
   | ChunkMessage
   | ToolCallMessage
@@ -93,6 +107,7 @@ export type ServerMessage =
   | InterruptedMessage
   | ErrorMessage
   | SessionInfoMessage
+  | TodoSnapshotMessage
   | { type: 'pong' };
 
 // ── 消息显示模型（UI 层使用）──
@@ -114,4 +129,5 @@ export interface DisplayMessage {
   interrupted?: boolean;
   isStreaming?: boolean;
   attachments?: ChatAttachment[];
+  todoState?: TodoItem[];
 }

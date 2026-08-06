@@ -251,6 +251,14 @@ async def websocket_chat(ws: WebSocket, session_id: str):
                                 c = chunk.strip()
                                 if not c:
                                     continue  # 过滤空白 chunk（不再产生 {"content":""}）
+                                # 结构化事件（todo 等带 type 的 JSON）直接转发，不占用回显跳过槽位
+                                try:
+                                    parsed = json.loads(c)
+                                    if isinstance(parsed, dict) and isinstance(parsed.get("type"), str):
+                                        chunks.append(c + '\n')
+                                        continue
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
                                 # 仅「逐字复述用户问题/问题+附件注释」才跳过回显，避免误删合法回复
                                 if not saw_first:
                                     saw_first = True

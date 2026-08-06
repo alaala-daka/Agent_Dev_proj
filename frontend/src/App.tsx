@@ -132,6 +132,15 @@ export default function App() {
       const history: DisplayMessage[] = (data.messages || [])
         .map((m, i) => convertBackendMessage(m as Record<string, unknown>, i))
         .filter((m): m is DisplayMessage => m !== null);
+      // 历史回显：把会话持久化的 todo 状态附加到最后一条 agent 消息上，渲染待办面板
+      if (data.todos && data.todos.length > 0) {
+        for (let i = history.length - 1; i >= 0; i--) {
+          if (history[i].role === 'agent') {
+            history[i] = { ...history[i], todoState: data.todos as import('./types/chat').TodoItem[] };
+            break;
+          }
+        }
+      }
       setMessages(history);
     } catch (err) {
       console.error('Failed to load history:', err);

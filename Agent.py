@@ -1,7 +1,8 @@
+import json
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
 from factory.model_generator import chatmodel
-from agent_tools.middleware import tool_monitor,task_reflection_trigger
+from agent_tools.middleware import tool_monitor,task_reflection_trigger,todo_continue_trigger
 from agent_tools.agent_tools import search,calculator,todo,reflection,rag_summarize,get_todo_state,restore_todo_state,reset_todo_state
 from agent_tools.file_manage_tools import file_manage, ask_for_answer
 from agent_tools.session_tool import session as session_tool, set_current_agent
@@ -133,7 +134,7 @@ class Agent():
 
         self.agent=create_agent(
             model=chatmodel,
-            middleware=[task_reflection_trigger,tool_monitor],
+            middleware=[task_reflection_trigger,todo_continue_trigger,tool_monitor],
             tools=[calculator,todo,search,reflection,rag_summarize,file_manage,ask_for_answer,session_tool],
             system_prompt=full_prompt
         )
@@ -147,7 +148,7 @@ class Agent():
         # session_id 为 None 时保持 ephemeral 模式（不持久化）
 
     def stream(self, query: str, file_paths: list[str] | None = None):
-        from langchain_core.messages import AIMessage
+        from langchain_core.messages import AIMessage, ToolMessage
         query = query.strip()
         paths = [p.strip() for p in (file_paths or []) if p and p.strip()]
         if not query and not paths:
@@ -158,6 +159,8 @@ class Agent():
         if paths:
             human_content = (query + "\n\n" + build_file_note(paths)).strip()
         self.messages.append(HumanMessage(content=human_content))
+        # 本轮起始消息数：用于识别快照中"本轮新增"的消息（发 todo 事件只认增量）
+        last_len = len(self.messages)
         # 失败回滚目标：从未产出任何 chunk 时，也保持"历史 + 本轮提问"这一一致状态
         last_good = list(self.messages)
         try:
@@ -173,6 +176,13 @@ class Agent():
                 self.messages = list(msgs)   # 拷贝，避免别名到 graph 内部列表
                 last_good = self.messages
                 mes = msgs[-1]
+                # 本轮新增消息中出现 todo ToolMessage → 发一次快照事件（并行 add 也只发一条）
+                new_msgs = msgs[last_len:]
+                last_len = len(msgs)
+                if any(isinstance(m, ToolMessage) and getattr(m, "name", None) == "todo"
+                       for m in new_msgs):
+                    yield json.dumps({"type": "todo", "todos": get_todo_state()[0]},
+                                     ensure_ascii=False)
                 # 只输出 AI 的回复，跳过用户消息和系统消息（避免重复用户问题）
                 if isinstance(mes, AIMessage):
                     text = _content_to_text(mes.content)

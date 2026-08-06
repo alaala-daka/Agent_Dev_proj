@@ -57,3 +57,7 @@
 .markdown-body td { @apply border border-[#E5E5EA] px-3 py-1.5 text-sm; }
 .markdown-body code:not(pre code) { @apply bg-[#F0F0F2] px-1.5 py-0.5 rounded text-sm font-mono text-[#FF3B30]; }
 .markdown-body pre { @apply my-3 rounded-lg overflow-hidden; }
+/* GFM 任务列表（模型直接输出 `- [ ]`/`- [x]` 时兜底渲染为复选框） */
+.markdown-body ul.contains-task-list { @apply list-none pl-0; }
+.markdown-body .task-list-item { @apply flex items-start gap-1.5; }
+.markdown-body .task-list-item input[type="checkbox"] { @apply mt-[0.3rem] accent-[#0066CC]; }

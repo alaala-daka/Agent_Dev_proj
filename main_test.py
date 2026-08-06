@@ -1,11 +1,24 @@
 """
 Agent test — 会话感知 REPL
 """
+import json
 from dotenv import load_dotenv
 load_dotenv()
 
 from Agent import Agent
 from session.session_store import list_sessions, session_exists
+
+
+def _render_todos(todos: list) -> None:
+    """把 todo 快照事件渲染为可读的待办清单（REPL 下替代原始 JSON）"""
+    done = sum(1 for t in todos if t.get("status") == "done")
+    print(f"\n📋 待办清单 [{done}/{len(todos)} 已完成]", flush=True)
+    for t in todos:
+        icon = {"pending": "⬜", "in_progress": "🔄", "done": "✅"}.get(t.get("status"), "❓")
+        line = f"  {icon} [{t.get('id')}] {t.get('title', '')}"
+        if t.get("desc"):
+            line += f"  — {t['desc']}"
+        print(line, flush=True)
 
 if __name__=='__main__':
     # ── 选择或创建会话 ──
@@ -106,7 +119,15 @@ Agent 也可以通过 session 工具管理会话:
 
         # ── 正常对话 ──
         for content in a.stream(user_mess):
-            print(content,flush=True,end='')
+            try:
+                parsed = json.loads(content)
+                if (isinstance(parsed, dict) and parsed.get("type") == "todo"
+                        and isinstance(parsed.get("todos"), list)):
+                    _render_todos(parsed["todos"])
+                    continue
+            except (json.JSONDecodeError, TypeError):
+                pass
+            print(content, flush=True, end='')
 
     # ── 退出时保存 ──
     if a.session_id:
