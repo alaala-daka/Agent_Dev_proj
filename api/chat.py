@@ -3,7 +3,8 @@ WebSocket 聊天端点 — Agent 流式对话 + ask_for_answer 请求-响应协�
 
 协议:
   Client → Server:
-    { type: "chat", content: "..." }
+    { type: "chat", content: "...", files: ["uploads/foo.txt", ...] }
+      files 可选：本次上传的文件路径（项目根相对），隐式交给 Agent 用 file_manage 处理
     { type: "cancel" }
     { type: "user_answer", request_id: "...", answer: "approved"|"rejected", detail: "..." }
     { type: "ping" }
@@ -28,9 +29,25 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 
 from tool.logger_handler import logger
-from Agent import Agent
+from Agent import Agent, build_file_note, strip_file_note
 
 router = APIRouter()
+
+# 单条 chat 消息最多携带的上传文件数
+_MAX_FILES_PER_MESSAGE = 10
+
+
+def _coerce_files(raw: Any) -> list[str]:
+    """把 WS 载荷中的 files 字段规整为去空白字符串列表（上限 _MAX_FILES_PER_MESSAGE）"""
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for f in raw:
+        if isinstance(f, str) and f.strip():
+            out.append(f.strip())
+        if len(out) >= _MAX_FILES_PER_MESSAGE:
+            break
+    return out
 
 # ── Agent 实例缓存（按 session_id）──
 _agents: dict[str, Agent] = {}
@@ -204,7 +221,8 @@ async def websocket_chat(ws: WebSocket, session_id: str):
 
             if msg_type == "chat":
                 content = data.get("content", "")
-                if not content.strip():
+                files = _coerce_files(data.get("files"))
+                if not content.strip() and not files:
                     continue
 
                 # 包装 input() 为 WebSocket 版本
@@ -223,17 +241,35 @@ async def websocket_chat(ws: WebSocket, session_id: str):
                         nonlocal stream_finished
                         try:
                             user_query = content.strip()
+                            # 模型实际看到的用户消息 = query + 上传文件注释块；回显跳过需一并比对
+                            note = build_file_note(files) if files else None
+                            combined = (user_query + "\n\n" + note).strip() if note else None
                             saw_first = False
-                            for chunk in agent.stream(content):
+                            for chunk in agent.stream(content, file_paths=files):
                                 if cancel_event.is_set():
                                     break
                                 c = chunk.strip()
                                 if not c:
                                     continue  # 过滤空白 chunk（不再产生 {"content":""}）
-                                # 仅「逐字复述用户问题」才跳过回显，避免误删合法回复
+                                # 结构化事件（todo 等带 type 的 JSON）直接转发，不占用回显跳过槽位
+                                try:
+                                    parsed = json.loads(c)
+                                    if isinstance(parsed, dict) and isinstance(parsed.get("type"), str):
+                                        chunks.append(c + '\n')
+                                        continue
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+                                # 仅「逐字复述用户问题/问题+附件注释」才跳过回显，避免误删合法回复
                                 if not saw_first:
                                     saw_first = True
-                                    if c == user_query:
+                                    if (
+                                        c == user_query
+                                        or (note and (
+                                            c == note
+                                            or c == combined
+                                            or strip_file_note(c).strip() == user_query
+                                        ))
+                                    ):
                                         logger.info(f"[chat] 跳过回显: {c[:80]}")
                                         continue
                                 chunks.append(c + '\n')

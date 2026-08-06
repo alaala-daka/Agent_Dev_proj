@@ -1,7 +1,8 @@
+import json
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
 from factory.model_generator import chatmodel
-from agent_tools.middleware import tool_monitor,task_reflection_trigger
+from agent_tools.middleware import tool_monitor,task_reflection_trigger,todo_continue_trigger
 from agent_tools.agent_tools import search,calculator,todo,reflection,rag_summarize,get_todo_state,restore_todo_state,reset_todo_state
 from agent_tools.file_manage_tools import file_manage, ask_for_answer
 from agent_tools.session_tool import session as session_tool, set_current_agent
@@ -32,6 +33,25 @@ def _content_to_text(content) -> str:
                 parts.append(str(getattr(block, "get", lambda k, d="": d)("text", "")))
         return "".join(parts)
     return str(content)
+
+
+# ── 上传文件注释块协议（与前端 history 剥离共用）──
+# 格式：随用户消息追加固定标记块，Agent（模型）可见文件路径；
+# 前端在历史回显时用 strip_file_note 剥离该块并渲染附件 chip。
+_FILE_NOTE_BEGIN = "[已上传文件]"
+_FILE_NOTE_END = "[/已上传文件]"
+
+
+def build_file_note(file_paths: list[str]) -> str:
+    """生成「已上传文件」注释块：列出文件路径供 Agent 用 file_manage 读取/修改"""
+    lines = "\n".join(f"- {p}" for p in file_paths)
+    return f"{_FILE_NOTE_BEGIN}\n{lines}\n{_FILE_NOTE_END}"
+
+
+def strip_file_note(text: str) -> str:
+    """从文本中剥离 [已上传文件]...[/已上传文件] 块（连同周围空白）"""
+    import re
+    return re.sub(r"\s*\[已上传文件\][\s\S]*?\[/已上传文件\]\s*", "", text).strip()
 
 
 def _sanitize_history(messages: list) -> list:
@@ -114,7 +134,7 @@ class Agent():
 
         self.agent=create_agent(
             model=chatmodel,
-            middleware=[task_reflection_trigger,tool_monitor],
+            middleware=[task_reflection_trigger,todo_continue_trigger,tool_monitor],
             tools=[calculator,todo,search,reflection,rag_summarize,file_manage,ask_for_answer,session_tool],
             system_prompt=full_prompt
         )
@@ -127,13 +147,20 @@ class Agent():
             self._load_session_state(session_id)
         # session_id 为 None 时保持 ephemeral 模式（不持久化）
 
-    def stream(self, query: str):
-        from langchain_core.messages import AIMessage
+    def stream(self, query: str, file_paths: list[str] | None = None):
+        from langchain_core.messages import AIMessage, ToolMessage
         query = query.strip()
-        if not query:
+        paths = [p.strip() for p in (file_paths or []) if p and p.strip()]
+        if not query and not paths:
             return
         self.messages = _sanitize_history(self.messages)
-        self.messages.append(HumanMessage(content=query))
+        # 隐式传递上传文件路径：追加注释块到 HumanMessage 内容（模型可见、随会话持久化）
+        human_content = query
+        if paths:
+            human_content = (query + "\n\n" + build_file_note(paths)).strip()
+        self.messages.append(HumanMessage(content=human_content))
+        # 本轮起始消息数：用于识别快照中"本轮新增"的消息（发 todo 事件只认增量）
+        last_len = len(self.messages)
         # 失败回滚目标：从未产出任何 chunk 时，也保持"历史 + 本轮提问"这一一致状态
         last_good = list(self.messages)
         try:
@@ -149,6 +176,13 @@ class Agent():
                 self.messages = list(msgs)   # 拷贝，避免别名到 graph 内部列表
                 last_good = self.messages
                 mes = msgs[-1]
+                # 本轮新增消息中出现 todo ToolMessage → 发一次快照事件（并行 add 也只发一条）
+                new_msgs = msgs[last_len:]
+                last_len = len(msgs)
+                if any(isinstance(m, ToolMessage) and getattr(m, "name", None) == "todo"
+                       for m in new_msgs):
+                    yield json.dumps({"type": "todo", "todos": get_todo_state()[0]},
+                                     ensure_ascii=False)
                 # 只输出 AI 的回复，跳过用户消息和系统消息（避免重复用户问题）
                 if isinstance(mes, AIMessage):
                     text = _content_to_text(mes.content)
@@ -204,7 +238,7 @@ class Agent():
                 content = msg.content
             else:
                 continue
-            text = _content_to_text(content).strip()
+            text = strip_file_note(_content_to_text(content)).strip()
             if text:
                 return text
         return ""

@@ -4,10 +4,14 @@ import remarkGfm from 'remark-gfm';
 import type { DisplayMessage } from '../../types/chat';
 import { CodeBlock } from './CodeBlock';
 import { StreamingText } from './StreamingText';
+import { TodoPanel } from './TodoPanel';
 
 export const AgentBubble: React.FC<{ message: DisplayMessage }> = ({ message }) => (
   <div className="flex justify-start">
     <div className="max-w-[85%] bg-white border border-[#E5E5EA] rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
+      {message.todoState && message.todoState.length > 0 && (
+        <TodoPanel todos={message.todoState} />
+      )}
       {message.isStreaming ? (
         <div className="markdown-body text-[15px] leading-relaxed">
           <StreamingText content={message.content} />

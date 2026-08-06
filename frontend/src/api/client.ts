@@ -1,4 +1,5 @@
 import type { ModelEntry, ModelInput, ModelListResponse } from '../types/config';
+import type { ChatAttachment } from '../types/chat';
 
 // fetch wrapper for REST API
 const BASE = '/api';
@@ -24,7 +25,7 @@ export const apiClient = {
   deleteSession: (id: string) =>
     request<{ deleted: string }>(`/sessions/${id}`, { method: 'DELETE' }),
   getMessages: (id: string, offset = 0, limit = 50) =>
-    request<{ messages: unknown[]; total: number }>(`/sessions/${id}/messages?offset=${offset}&limit=${limit}`),
+    request<{ messages: unknown[]; total: number; todos?: import('../types/chat').TodoItem[] | null }>(`/sessions/${id}/messages?offset=${offset}&limit=${limit}`),
 
   // ── Config ──
   getConfig: (name: string) => request<{ config: string; values: Record<string, unknown> }>(`/config/${name}`),
@@ -53,6 +54,19 @@ export const apiClient = {
       method: 'PUT',
       body: JSON.stringify({ name }),
     }),
+
+  // ── Chat upload（多部分表单，不能走 JSON 化的 request）──
+  uploadChatFile: async (file: File): Promise<ChatAttachment> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${BASE}/files/chat-upload`, { method: 'POST', body: formData });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+      throw new Error(err.detail || '上传失败');
+    }
+    const data = (await res.json()) as { file_name: string; path: string; size: number };
+    return { name: data.file_name, path: data.path, size: data.size };
+  },
 
   // ── Files / RAG ──
   listRagFiles: () => request<{ files: unknown[]; total: number }>('/files/rag-files'),

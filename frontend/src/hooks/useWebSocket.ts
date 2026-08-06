@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import type { ServerMessage, ClientMessage, DisplayMessage, AskUserMessage } from '../types/chat';
+import type { ServerMessage, ClientMessage, DisplayMessage, AskUserMessage, ChatAttachment, TodoSnapshotMessage } from '../types/chat';
 
 interface UseWebSocketOptions {
   sessionId: string;
@@ -9,7 +9,7 @@ interface UseWebSocketOptions {
 }
 
 interface UseWebSocketReturn {
-  send: (content: string) => void;
+  send: (content: string, attachments?: ChatAttachment[]) => void;
   cancel: () => void;
   answerUser: (requestId: string, answer: 'approved' | 'rejected', detail?: string) => void;
   connected: boolean;
@@ -109,6 +109,26 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange, onTurnEn
         completeToolCall(msg.call_id, msg.error, true);
         break;
 
+      case 'todo': {
+        const m = msg as TodoSnapshotMessage;
+        if (!pendingMsgRef.current) {
+          pendingMsgRef.current = {
+            id: `agent-${Date.now()}`,
+            role: 'agent',
+            content: '',
+            timestamp: Date.now(),
+            isStreaming: true,
+            todoState: m.todos,
+          };
+          onStreamingChange(true);
+        } else {
+          pendingMsgRef.current.todoState = m.todos;
+          pendingMsgRef.current.isStreaming = true;
+        }
+        onMessage({ ...pendingMsgRef.current });
+        break;
+      }
+
       case 'ask_user':
         setAskUser(msg);
         break;
@@ -192,8 +212,10 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange, onTurnEn
 
   function flushPending() {
     if (pendingMsgRef.current) {
+      // 只有 todo 面板、无文本的消息也要保留
+      const hasTodo = !!(pendingMsgRef.current.todoState && pendingMsgRef.current.todoState.length > 0);
       // 不提交空白气泡
-      if (!pendingMsgRef.current.content.trim()) {
+      if (!pendingMsgRef.current.content.trim() && !hasTodo) {
         pendingMsgRef.current = null;
         return;
       }
@@ -203,8 +225,9 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange, onTurnEn
     }
   }
 
-  const send = useCallback((content: string) => {
-    if (!content || !content.trim()) return; // 空输入不发送
+  const send = useCallback((content: string, attachments?: ChatAttachment[]) => {
+    const hasAttachments = !!attachments && attachments.length > 0;
+    if ((!content || !content.trim()) && !hasAttachments) return; // 空输入且无附件不发送
     // 连接未就绪时直接丢弃输入，避免消息静默丢失后 streaming 卡在 true
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -217,10 +240,15 @@ export function useWebSocket({ sessionId, onMessage, onStreamingChange, onTurnEn
       role: 'user',
       content,
       timestamp: Date.now(),
+      ...(hasAttachments ? { attachments } : {}),
     };
     onMessage(userMsg);
 
-    const msg: ClientMessage = { type: 'chat', content };
+    const msg: ClientMessage = {
+      type: 'chat',
+      content,
+      ...(hasAttachments ? { files: attachments!.map(a => a.path) } : {}),
+    };
     ws.send(JSON.stringify(msg));
     // 发送即进入"工作中"状态（覆盖模型思考/工具调用阶段，首个 chunk 前的空窗期）
     onStreamingChange(true);

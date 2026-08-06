@@ -4,10 +4,18 @@ export interface WsMessageBase {
   type: string;
 }
 
+// 附件（对话内上传的文件）
+export interface ChatAttachment {
+  name: string;   // 显示名（原始文件名）
+  path: string;   // 项目根相对路径，如 'uploads/foo.txt'
+  size: number;   // 字节
+}
+
 // ── Client → Server ──
 export interface ChatMessage extends WsMessageBase {
   type: 'chat';
   content: string;
+  files?: string[];   // 本次上传文件路径（项目根相对），隐式交给 Agent
 }
 
 export interface CancelMessage extends WsMessageBase {
@@ -75,6 +83,20 @@ export interface SessionInfoMessage extends WsMessageBase {
   message_count: number;
 }
 
+export interface TodoItem {
+  id: number;
+  title: string;
+  desc: string;
+  status: 'pending' | 'in_progress' | 'done';
+  created_at?: string;
+  done_at?: string | null;
+}
+
+export interface TodoSnapshotMessage extends WsMessageBase {
+  type: 'todo';
+  todos: TodoItem[];
+}
+
 export type ServerMessage =
   | ChunkMessage
   | ToolCallMessage
@@ -85,6 +107,7 @@ export type ServerMessage =
   | InterruptedMessage
   | ErrorMessage
   | SessionInfoMessage
+  | TodoSnapshotMessage
   | { type: 'pong' };
 
 // ── 消息显示模型（UI 层使用）──
@@ -105,4 +128,6 @@ export interface DisplayMessage {
   };
   interrupted?: boolean;
   isStreaming?: boolean;
+  attachments?: ChatAttachment[];
+  todoState?: TodoItem[];
 }
