@@ -79,6 +79,18 @@ def ModelLoadConfig(abs_path:str|None=None,encoding='utf-8'):
             "api_key": "",
             "model": "deepseek-v4-pro",
         }],
+        "embedding": {
+            "label": "DashScope Embedding（默认）",
+            "base_url": "",
+            "api_key": "",
+            "model": "text-embedding-v4",
+        },
+        "reranker": {
+            "label": "DashScope Reranker（默认）",
+            "base_url": "",
+            "api_key": "",
+            "model": "gte-rerank-v2",
+        },
     }
 
 Model_Config=ModelLoadConfig()

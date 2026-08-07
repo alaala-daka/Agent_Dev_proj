@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Pencil, X, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, Pencil, X, CheckCircle2, ChevronDown } from 'lucide-react';
 import { useModels } from '../../hooks/useModels';
 import { Button } from '../shared/Button';
 import { Toast } from '../shared/Toast';
@@ -43,13 +43,143 @@ const Field: React.FC<{
   </div>
 );
 
+interface AuxBlockProps {
+  title: string;
+  config: { label: string; base_url: string; api_key: string; model: string } | null;
+  onSave: (patch: { label: string; base_url: string; model: string; api_key?: string }) => Promise<{ warning?: string }>;
+  notify: (message: string, type?: ToastState['type']) => void;
+  showReindexWarning?: boolean;
+}
+
+/** Embedding / Reranker 单例配置卡片：展示当前配置 + 编辑表单 */
+const AuxBlock: React.FC<AuxBlockProps> = ({ title, config, onSave, notify, showReindexWarning }) => {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ label: '', base_url: '', api_key: '', model: '' });
+  const [busy, setBusy] = useState(false);
+
+  const openEdit = () => {
+    if (!config) return;
+    // api_key 不回填（后端只返回掩码，回填会覆盖真实 key）；留空 = 保留原 key
+    setForm({ label: config.label, base_url: config.base_url, api_key: '', model: config.model });
+    setEditing(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.model.trim()) {
+      notify('请填写模型名 (model)', 'error');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await onSave({
+        label: form.label,
+        base_url: form.base_url.trim(),
+        model: form.model.trim(),
+        ...(form.api_key.trim() ? { api_key: form.api_key.trim() } : {}),
+      });
+      setEditing(false);
+      notify(res.warning || '已保存', res.warning ? 'warning' : 'success');
+    } catch (err: unknown) {
+      notify(err instanceof Error ? err.message : '操作失败', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-[#E5E5EA] bg-white p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-[#1D1D1F] font-sidebar">{title}</span>
+        {!editing && (
+          <Button variant="secondary" size="sm" onClick={openEdit} disabled={!config}>
+            <Pencil size={12} /> 编辑
+          </Button>
+        )}
+      </div>
+
+      {showReindexWarning && (
+        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800 font-body">
+          切换 Embedding 模型后，已入库向量与新模型不兼容，请删除并重新上传知识库文件（反思笔记同理）。
+        </div>
+      )}
+
+      {editing ? (
+        <div className="mt-2 space-y-2">
+          <Field
+            label="显示名 (label)"
+            value={form.label}
+            onChange={(v) => setForm((f) => ({ ...f, label: v }))}
+          />
+          <Field
+            label="API 地址 (base_url)"
+            value={form.base_url}
+            onChange={(v) => setForm((f) => ({ ...f, base_url: v }))}
+            placeholder="留空 = DashScope 内置；非空 = OpenAI 兼容端点"
+          />
+          <Field
+            label="API Key"
+            type="password"
+            value={form.api_key}
+            onChange={(v) => setForm((f) => ({ ...f, api_key: v }))}
+            placeholder="留空则保留原 key / 使用环境变量"
+          />
+          <Field
+            label="模型名 (model)"
+            value={form.model}
+            onChange={(v) => setForm((f) => ({ ...f, model: v }))}
+            placeholder="如 text-embedding-v4 / gte-rerank-v2"
+          />
+          <div className="flex gap-2">
+            <Button variant="primary" size="sm" onClick={handleSave} disabled={busy}>
+              {busy ? '保存中...' : '保存'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              取消
+            </Button>
+          </div>
+        </div>
+      ) : config ? (
+        <div className="mt-1.5 space-y-0.5 text-[11px] text-[#6E6E73] font-body break-all">
+          <div>
+            <span className="text-[#AEAEB2] font-sidebar">model:</span> {config.model}
+          </div>
+          <div>
+            <span className="text-[#AEAEB2] font-sidebar">base_url:</span>{' '}
+            {config.base_url || 'DashScope（环境变量）'}
+          </div>
+          <div>
+            <span className="text-[#AEAEB2] font-sidebar">api_key:</span>{' '}
+            {config.api_key ? `已设置 (${config.api_key})` : '未设置（使用环境变量）'}
+          </div>
+        </div>
+      ) : (
+        <p className="mt-1.5 text-[11px] text-[#AEAEB2] font-sidebar">加载中...</p>
+      )}
+    </div>
+  );
+};
+
 export const ModelSettings: React.FC = () => {
-  const { models, active, loading, refresh, addModel, updateModel, deleteModel, setActiveModel } = useModels();
+  const {
+    models,
+    active,
+    loading,
+    refresh,
+    addModel,
+    updateModel,
+    deleteModel,
+    setActiveModel,
+    embedding,
+    reranker,
+    updateEmbedding,
+    updateReranker,
+  } = useModels();
   const [showForm, setShowForm] = useState(false);
   const [editingName, setEditingName] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [auxOpen, setAuxOpen] = useState(false);
 
   useEffect(() => {
     refresh();
@@ -257,15 +387,42 @@ export const ModelSettings: React.FC = () => {
         </div>
       )}
 
-      {/* 添加按钮 */}
+      {/* 添加按钮 + 更多模型配置展开入口 */}
       {!showForm && (
-        <Button variant="secondary" size="sm" onClick={openAdd} className="w-full">
-          <Plus size={14} /> 添加模型
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={openAdd} className="flex-1">
+            <Plus size={14} /> 添加模型
+          </Button>
+          <button
+            type="button"
+            onClick={() => setAuxOpen((o) => !o)}
+            title={auxOpen ? '收起更多模型配置' : '展开更多模型配置'}
+            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md
+              border border-[#D2D2D7] bg-transparent text-[#6E6E73]
+              hover:bg-[#F0F0F2] hover:text-[#1D1D1F] transition-all cursor-pointer shrink-0"
+          >
+            <ChevronDown size={12} className={`transition-transform ${auxOpen ? 'rotate-180' : ''}`} />
+            {auxOpen ? '收起更多模型配置' : '展开更多模型配置'}
+          </button>
+        </div>
+      )}
+
+      {/* Embedding / Reranker 辅助模型配置（默认折叠，展开后 Reranker 在前、Embedding 在后） */}
+      {auxOpen && (
+        <div className="pt-1 space-y-3">
+          <AuxBlock title="Reranker 模型" config={reranker} onSave={updateReranker} notify={showToast} />
+          <AuxBlock
+            title="Embedding 模型"
+            config={embedding}
+            onSave={updateEmbedding}
+            notify={showToast}
+            showReindexWarning
+          />
+        </div>
       )}
 
       <p className="text-[11px] text-[#AEAEB2] font-sidebar">
-        当前 active 模型驱动主对话、会话标题、RAG 总结与文件切分。任意符合 OpenAI 协议的端点即可，无需 DeepSeek。
+        当前 active 模型驱动主对话、会话标题、RAG 总结与文件切分。Embedding 用于知识库向量化，Reranker 用于检索重排；base_url 留空走 DashScope 内置，非空走 OpenAI 兼容端点。
       </p>
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}

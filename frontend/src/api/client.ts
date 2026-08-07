@@ -1,4 +1,4 @@
-import type { ModelEntry, ModelInput, ModelListResponse, ReflectionEntry, ReflectionCreate, ReflectionUpdate } from '../types/config';
+import type { ModelEntry, ModelInput, ModelListResponse, EmbeddingConfig, RerankerConfig, AuxModelUpdate, ReflectionEntry, ReflectionCreate, ReflectionUpdate } from '../types/config';
 import type { ChatAttachment } from '../types/chat';
 
 // fetch wrapper for REST API
@@ -53,6 +53,18 @@ export const apiClient = {
     request<{ active: string; model_info?: Record<string, unknown> }>('/models/active', {
       method: 'PUT',
       body: JSON.stringify({ name }),
+    }),
+  getEmbeddingConfig: () => request<{ embedding: EmbeddingConfig }>('/models/embedding'),
+  updateEmbeddingConfig: (patch: AuxModelUpdate) =>
+    request<{ updated: string; model_info?: Record<string, unknown>; warning?: string }>('/models/embedding', {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
+  getRerankerConfig: () => request<{ reranker: RerankerConfig }>('/models/reranker'),
+  updateRerankerConfig: (patch: AuxModelUpdate) =>
+    request<{ updated: string; model_info?: Record<string, unknown>; warning?: string }>('/models/reranker', {
+      method: 'PUT',
+      body: JSON.stringify(patch),
     }),
 
   // ── Chat upload（多部分表单，不能走 JSON 化的 request）──

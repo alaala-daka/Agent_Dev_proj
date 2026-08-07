@@ -42,6 +42,30 @@ export interface ModelListResponse {
   models: ModelEntry[];
 }
 
+/** Embedding 模型配置（api_key 由后端掩码返回） */
+export interface EmbeddingConfig {
+  label: string;
+  base_url: string;
+  api_key: string;
+  model: string;
+}
+
+/** Reranker 模型配置（api_key 由后端掩码返回） */
+export interface RerankerConfig {
+  label: string;
+  base_url: string;
+  api_key: string;
+  model: string;
+}
+
+/** 更新 embedding / reranker 的请求体（api_key 留空 = 保留原 key） */
+export interface AuxModelUpdate {
+  label?: string;
+  base_url?: string;
+  api_key?: string;
+  model?: string;
+}
+
 /** 反思笔记严重程度 */
 export type ReflectionSeverity = 'fatal' | 'high' | 'medium' | 'low';
 

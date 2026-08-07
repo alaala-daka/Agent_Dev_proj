@@ -296,16 +296,20 @@ def reset_todo_state() -> None:
 from datetime import datetime, timedelta
 from typing import Any
 from langchain_chroma import Chroma
-from langchain_community.embeddings import DashScopeEmbeddings
+from factory.model_generator import create_embeddingmodel
+
+
+def _build_reflection_chroma() -> Chroma:
+    """构建反思笔记专用 Chroma collection（与知识库共用同一 embedding 配置）"""
+    return Chroma(
+        collection_name=Chroma_Config.get("reflection_collection_name", "agent_reflections"),
+        persist_directory=Chroma_Config["persist_directory"],
+        embedding_function=create_embeddingmodel(),
+    )
+
 
 # ── 初始化专有 Chroma collection ──
-_reflection_chroma = Chroma(
-    collection_name=Chroma_Config.get("reflection_collection_name", "agent_reflections"),
-    persist_directory=Chroma_Config["persist_directory"],
-    embedding_function=DashScopeEmbeddings(
-        model=Chroma_Config["embedding_model_name"],
-    ),
-)
+_reflection_chroma = _build_reflection_chroma()
 
 # ── 严重程度映射 ──
 _SEVERITY_ICON: dict[str, str] = {

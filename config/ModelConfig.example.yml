@@ -15,3 +15,20 @@ models:
     base_url: ""
     api_key: ""
     model: deepseek-v4-pro
+#
+# ── 辅助模型：Embedding（向量化）与 Reranker（检索重排）──
+#   base_url 留空 = DashScope 内置（Embedding 用 DashScopeEmbeddings / Reranker 用 TextReRank，
+#                   key 空时读环境变量 DASHSCOPE_API_KEY）
+#   base_url 非空 = OpenAI 兼容端点（Embedding 走 /embeddings；Reranker 走 POST {base_url}/rerank，
+#                   key 空时读 EMBEDDING_API_KEY / RERANKER_API_KEY）
+#   优先级：YAML 值 > .env > 内置默认
+embedding:
+  label: DashScope Embedding（默认）
+  base_url: ""
+  api_key: ""
+  model: text-embedding-v4
+reranker:
+  label: DashScope Reranker（默认）
+  base_url: ""
+  api_key: ""
+  model: gte-rerank-v2

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from tool.config_handler import Model_Config, save_model_config
 from tool.logger_handler import logger
+from factory.model_generator import _EMBEDDING_DEFAULTS, _RERANKER_DEFAULTS
 
 router = APIRouter()
 
@@ -46,6 +47,32 @@ def _apply_change_or_400() -> dict:
         raise HTTPException(status_code=400, detail=f"模型切换失败: {e}")
 
 
+def _patch_aux_block(block_key: str, req, defaults: dict) -> None:
+    """就地更新 Model_Config 中的 embedding/reranker 块。api_key 留空 = 保留原 key。"""
+    block = Model_Config.setdefault(block_key, dict(defaults))
+    if req.label is not None:
+        block["label"] = (req.label or "").strip() or defaults["label"]
+    if req.base_url is not None:
+        block["base_url"] = (req.base_url or "").strip()
+    if req.model is not None:
+        m = (req.model or "").strip()
+        if not m:
+            raise HTTPException(status_code=400, detail="模型名 (model) 不能为空")
+        block["model"] = m
+    if req.api_key:
+        block["api_key"] = (req.api_key or "").strip()
+
+
+def _apply_aux_or_400() -> dict:
+    """调用 apply_aux_model_change()；失败返回 HTTP 400。不驱逐 Agent 缓存。"""
+    from factory.model_generator import apply_aux_model_change
+    try:
+        return apply_aux_model_change()
+    except Exception as e:
+        logger.exception(f"[models] 辅助模型配置切换失败")
+        raise HTTPException(status_code=400, detail=f"配置切换失败: {e}")
+
+
 class ModelCreate(BaseModel):
     name: str
     label: str = ""
@@ -63,6 +90,20 @@ class ModelUpdate(BaseModel):
 
 class SetActiveRequest(BaseModel):
     name: str
+
+
+class EmbeddingUpdate(BaseModel):
+    label: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+
+
+class RerankerUpdate(BaseModel):
+    label: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
 
 
 @router.get("/models")
@@ -119,6 +160,48 @@ async def api_set_active(req: SetActiveRequest):
     info = _apply_change_or_400()
     logger.info(f"[models] 已切换 active 模型: {name}")
     return {"active": name, "model_info": info}
+
+
+# 注意：/models/embedding 与 /models/reranker 必须声明在 /models/{name} 之前，
+# 避免 "embedding" / "reranker" 被 {name} 参数吞掉。
+
+@router.get("/models/embedding")
+async def api_get_embedding():
+    """返回当前 Embedding 模型配置（api_key 掩码）"""
+    block = Model_Config.get("embedding") or {}
+    return {"embedding": _public(block)}
+
+
+@router.put("/models/embedding")
+async def api_update_embedding(req: EmbeddingUpdate):
+    """更新 Embedding 模型配置。api_key 留空 = 保留原 key。
+    变更后已入库向量与新模型不兼容，需删除并重新上传知识库文件。"""
+    _patch_aux_block("embedding", req, _EMBEDDING_DEFAULTS)
+    save_model_config()
+    info = _apply_aux_or_400()
+    logger.info(f"[models] 已更新 embedding 配置")
+    return {
+        "updated": "embedding",
+        "model_info": info,
+        "warning": "Embedding 模型变更后，已入库向量与新模型不兼容，请删除并重新上传知识库文件（反思笔记同理）。",
+    }
+
+
+@router.get("/models/reranker")
+async def api_get_reranker():
+    """返回当前 Reranker 模型配置（api_key 掩码）"""
+    block = Model_Config.get("reranker") or {}
+    return {"reranker": _public(block)}
+
+
+@router.put("/models/reranker")
+async def api_update_reranker(req: RerankerUpdate):
+    """更新 Reranker 模型配置。api_key 留空 = 保留原 key。"""
+    _patch_aux_block("reranker", req, _RERANKER_DEFAULTS)
+    save_model_config()
+    info = _apply_aux_or_400()
+    logger.info(f"[models] 已更新 reranker 配置")
+    return {"updated": "reranker", "model_info": info}
 
 
 @router.put("/models/{name}")

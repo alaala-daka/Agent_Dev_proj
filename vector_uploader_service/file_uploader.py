@@ -1,11 +1,10 @@
 """
 Function:文件向量化上传Chroma数据库
 """
-from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from tool.config_handler import Chroma_Config,Prompt_Config
-from factory.model_generator import create_ragmodel
+from factory.model_generator import create_ragmodel, create_embeddingmodel
 from tool.path_tool import get_abs_path
 from vector_uploader_service.md5_tools import md5_file_check,md5_loader,md5_trans
 from vector_uploader_service.file_record import record_file
@@ -34,9 +33,7 @@ class File_Uploader():
         self.chroma=Chroma(
             collection_name=Chroma_Config['collection_name'],
             persist_directory=Chroma_Config['persist_directory'],
-            embedding_function=DashScopeEmbeddings(
-                model=Chroma_Config['embedding_model_name']
-                )
+            embedding_function=create_embeddingmodel()
         )
         self.splitters_model=create_ragmodel()
         self.textsplitter=RecursiveCharacterTextSplitter(
